@@ -24,7 +24,15 @@ ROOT_DIRS = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
 TARGET_LANGS = os.environ.get("TARGET_LANGS", "nl,bs").split(",")
 SRC_EXT = os.environ.get("SRC_EXT", ".en.srt")
 API_URL = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000/translate")
-WORKERS = int(os.environ.get("WORKERS", "1"))
+# Limit worker threads to avoid LibreTranslate instability from excessive threads
+# https://github.com/LibreTranslate/LibreTranslate/issues/716 reports crashes after tens of thousands of threads
+MAX_WORKERS = 10
+requested_workers = int(os.environ.get("WORKERS", "1"))
+WORKERS = min(requested_workers, MAX_WORKERS)
+if requested_workers > MAX_WORKERS:
+    logger.warning(
+        "Requested %s workers, capping at %s to prevent instability", requested_workers, MAX_WORKERS
+    )
 QUEUE_DB = os.environ.get("QUEUE_DB", "queue.db")
 logger.debug(
     "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_EXT=%s API_URL=%s WORKERS=%s QUEUE_DB=%s",
