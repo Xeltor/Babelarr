@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+import signal
 
 import requests
 import schedule
@@ -69,6 +70,9 @@ conn = sqlite3.connect(QUEUE_DB, check_same_thread=False)
 conn.execute("CREATE TABLE IF NOT EXISTS queue (path TEXT PRIMARY KEY)")
 conn.commit()
 
+# Global shutdown event
+shutdown_event = threading.Event()
+
 
 def translate_file(src: Path, lang: str) -> None:
     """Send the SRT file to LibreTranslate and store the translated version."""
@@ -84,8 +88,11 @@ def translate_file(src: Path, lang: str) -> None:
 
 
 def worker():
-    while True:
-        path = tasks.get()
+    while not shutdown_event.is_set():
+        try:
+            path = tasks.get(timeout=1)
+        except queue.Empty:
+            continue
         logger.debug("Worker picked up %s", path)
         try:
             if path.exists():
@@ -156,7 +163,7 @@ def watch():
     observer.start()
     logger.info("Observer started")
     try:
-        while True:
+        while not shutdown_event.is_set():
             time.sleep(1)
     finally:
         observer.stop()
@@ -165,20 +172,38 @@ def watch():
 
 
 def main():
+    def handle_signal(signum, frame):
+        logger.info("Received signal %s", signum)
+        shutdown_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, handle_signal)
+
     logger.info("Starting %d worker threads", WORKERS)
+    workers = []
     for _ in range(WORKERS):
-        threading.Thread(target=worker, daemon=True).start()
+        t = threading.Thread(target=worker)
+        t.start()
+        workers.append(t)
 
     load_pending()
     full_scan()
     schedule.every().hour.do(full_scan)
 
-    threading.Thread(target=watch, daemon=True).start()
+    watcher = threading.Thread(target=watch)
+    watcher.start()
     logger.info("Service started")
 
-    while True:
+    while not shutdown_event.is_set():
         schedule.run_pending()
         time.sleep(1)
+
+    logger.info("Shutdown initiated")
+    watcher.join()
+    for t in workers:
+        t.join()
+    conn.close()
+    logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":
