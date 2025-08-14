@@ -42,7 +42,7 @@ for lang in _raw_langs:
     TARGET_LANGS.append(normalized)
     seen_langs.add(normalized)
 SRC_EXT = os.environ.get("SRC_EXT", ".en.srt")
-API_URL = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000/translate")
+API_URL = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000/translate_file")
 # Limit worker threads to avoid LibreTranslate instability from excessive threads
 # https://github.com/LibreTranslate/LibreTranslate/issues/716 reports crashes after tens of thousands of threads
 MAX_WORKERS = 10
@@ -77,6 +77,15 @@ conn.commit()
 shutdown_event = threading.Event()
 
 
+ERROR_MESSAGES = {
+    400: "Bad Request",
+    403: "Forbidden",
+    404: "Not Found",
+    429: "Too Many Requests",
+    500: "Server Error",
+}
+
+
 def translate_file(src: Path, lang: str) -> None:
     """Send the SRT file to LibreTranslate and store the translated version."""
     logger.debug("Translating %s to %s", src, lang)
@@ -84,12 +93,16 @@ def translate_file(src: Path, lang: str) -> None:
         files = {"file": fh}
         data = {"source": "en", "target": lang, "format": "srt"}
         resp = requests.post(API_URL, files=files, data=data, timeout=60)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError:
-            logger.error(
-                "HTTP error %s from LibreTranslate", resp.status_code
-            )
+        if resp.status_code != 200:
+            message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
+            try:
+                err_json = resp.json()
+                detail = err_json.get("error") or err_json.get("message") or err_json.get("detail")
+                if detail:
+                    message = f"{message}: {detail}"
+            except ValueError:
+                pass
+            logger.error("HTTP %s from LibreTranslate: %s", resp.status_code, message)
             logger.error("Headers: %s", resp.headers)
             logger.error("Body: %s", resp.text)
             if logger.isEnabledFor(logging.DEBUG):
@@ -103,7 +116,7 @@ def translate_file(src: Path, lang: str) -> None:
                     logger.debug("Saved failing response to %s", tmp.name)
                 finally:
                     tmp.close()
-            raise
+            resp.raise_for_status()
     output = src.with_suffix(f".{lang}.srt")
     output.write_bytes(resp.content)
     logger.info("[%s] saved -> %s", lang, output)
