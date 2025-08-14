@@ -21,7 +21,25 @@ logger = logging.getLogger("babelarr")
 
 # Configuration via environment variables
 ROOT_DIRS = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
-TARGET_LANGS = os.environ.get("TARGET_LANGS", "nl,bs").split(",")
+# Parse TARGET_LANGS, stripping whitespace, dropping empties, de-duping, and warning
+# on invalid codes
+_raw_langs = os.environ.get("TARGET_LANGS", "nl,bs").split(",")
+TARGET_LANGS = []
+seen_langs = set()
+for lang in _raw_langs:
+    cleaned = lang.strip()
+    if not cleaned:
+        logger.warning("Empty language code in TARGET_LANGS; ignoring")
+        continue
+    if not cleaned.isalpha():
+        logger.warning("Invalid language code '%s' in TARGET_LANGS; ignoring", cleaned)
+        continue
+    normalized = cleaned.lower()
+    if normalized in seen_langs:
+        logger.debug("Duplicate language code '%s' in TARGET_LANGS; ignoring", cleaned)
+        continue
+    TARGET_LANGS.append(normalized)
+    seen_langs.add(normalized)
 SRC_EXT = os.environ.get("SRC_EXT", ".en.srt")
 API_URL = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000/translate")
 # Limit worker threads to avoid LibreTranslate instability from excessive threads
