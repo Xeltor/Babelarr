@@ -52,7 +52,10 @@ if requested_workers > MAX_WORKERS:
     logger.warning(
         "Requested %s workers, capping at %s to prevent instability", requested_workers, MAX_WORKERS
     )
-QUEUE_DB = os.environ.get("QUEUE_DB", "queue.db")
+# Location of the persistent queue database. Default inside /config so it can
+# be mapped to a host directory for persistence across container restarts.
+QUEUE_DB = os.environ.get("QUEUE_DB", "/config/queue.db")
+Path(QUEUE_DB).parent.mkdir(parents=True, exist_ok=True)
 logger.debug(
     "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_EXT=%s API_URL=%s WORKERS=%s QUEUE_DB=%s",
     ROOT_DIRS,
