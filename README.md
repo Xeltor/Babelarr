@@ -31,3 +31,11 @@ Queued translation tasks are stored in a small SQLite database (`queue.db` by de
 
 `WORKERS` sets the maximum number of concurrent translation threads. Values above 10 are capped to prevent LibreTranslate from becoming unstable due to excessive threading.
 
+
+## Testing
+
+Run the test suite with [pytest](https://docs.pytest.org/):
+
+```bash
+pytest
+```
