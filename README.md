@@ -23,3 +23,5 @@ docker run -d --name babelarr \
 ```
 
 The application scans for new `.en.srt` files on startup, upon file creation and every hour thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`).
+
+Queued translation tasks are stored in a small SQLite database (`queue.db` by default) so that pending work survives restarts.

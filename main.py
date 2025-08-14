@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import queue
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -16,9 +17,14 @@ TARGET_LANGS = os.environ.get("TARGET_LANGS", "nl,bs").split(",")
 SRC_EXT = os.environ.get("SRC_EXT", ".en.srt")
 API_URL = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000/translate")
 WORKERS = int(os.environ.get("WORKERS", "1"))
+QUEUE_DB = os.environ.get("QUEUE_DB", "queue.db")
 
-# task queue
+# persistent task queue
 tasks = queue.Queue()
+db_lock = threading.Lock()
+conn = sqlite3.connect(QUEUE_DB, check_same_thread=False)
+conn.execute("CREATE TABLE IF NOT EXISTS queue (path TEXT PRIMARY KEY)")
+conn.commit()
 
 
 def translate_file(src: Path, lang: str) -> None:
@@ -37,26 +43,46 @@ def worker():
     while True:
         path = tasks.get()
         try:
-            for lang in TARGET_LANGS:
-                out = path.with_suffix(f".{lang}.srt")
-                if not out.exists():
-                    translate_file(path, lang)
+            if path.exists():
+                for lang in TARGET_LANGS:
+                    out = path.with_suffix(f".{lang}.srt")
+                    if not out.exists():
+                        translate_file(path, lang)
+            else:
+                print(f"missing {path}, skipping")
         except Exception as exc:
             print(f"translation failed for {path}: {exc}")
         finally:
+            with db_lock:
+                conn.execute("DELETE FROM queue WHERE path = ?", (str(path),))
+                conn.commit()
             tasks.task_done()
 
 
 def enqueue(path: Path):
     if path.suffix == SRC_EXT and path.is_file():
-        tasks.put(path)
-        print(f"queued {path}")
+        with db_lock:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO queue(path) VALUES (?)", (str(path),)
+            )
+            conn.commit()
+        if cur.rowcount:
+            tasks.put(path)
+            print(f"queued {path}")
 
 
 def full_scan():
     for root in ROOT_DIRS:
         for file in Path(root).rglob(f"*{SRC_EXT}"):
             enqueue(file)
+
+
+def load_pending():
+    with db_lock:
+        rows = conn.execute("SELECT path FROM queue").fetchall()
+    for (p,) in rows:
+        tasks.put(Path(p))
+        print(f"restored {p}")
 
 
 class SrtHandler(FileSystemEventHandler):
@@ -82,6 +108,7 @@ def main():
     for _ in range(WORKERS):
         threading.Thread(target=worker, daemon=True).start()
 
+    load_pending()
     full_scan()
     schedule.every().hour.do(full_scan)
 
