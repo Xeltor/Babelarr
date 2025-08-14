@@ -16,6 +16,7 @@ Run the container alongside a LibreTranslate instance:
 docker run -d --name babelarr \
   --network subtitles \
   -v /path/to/subtitles:/data \
+  -v /path/to/config:/config \
   -e WATCH_DIRS="/data" \
   -e TARGET_LANGS="nl,bs" \
   -e LIBRETRANSLATE_URL="http://libretranslate:5000/translate" \
@@ -25,7 +26,10 @@ docker run -d --name babelarr \
 
 The application scans for new `.en.srt` files on startup, upon file creation and every hour thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`).
 
-Queued translation tasks are stored in a small SQLite database (`queue.db` by default) so that pending work survives restarts.
+Queued translation tasks are stored in a small SQLite database (`/config/queue.db` by default) so that pending work survives
+container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
+
+The container runs as a non-root user with UID and GID `1000`. Ensure the host paths mounted at `/data` and `/config` are writable by this user.
 
 `LOG_LEVEL` controls the verbosity of console output and accepts standard logging levels such as `DEBUG`, `INFO`, `WARNING` and `ERROR`.
 
