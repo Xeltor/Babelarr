@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./libretranslate-data:/data
+    networks:
+      - subtitles
+
+  babelarr:
+    build: .
+    image: babelarr
+    container_name: babelarr
+    restart: unless-stopped
+    depends_on:
+      - libretranslate
+    volumes:
+      - ./subtitles:/data
+      - ./config:/config
+    environment:
+      WATCH_DIRS: "/data"
+      TARGET_LANGS: "nl,bs"
+      SRC_EXT: ".en.srt"
+      LIBRETRANSLATE_URL: "http://libretranslate:5000/translate_file"
+      LOG_LEVEL: "INFO"
+      WORKERS: "1"
+      QUEUE_DB: "/config/queue.db"
+    networks:
+      - subtitles
+
+networks:
+  subtitles:
+    driver: bridge
