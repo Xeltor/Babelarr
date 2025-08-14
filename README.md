@@ -19,7 +19,7 @@ docker run -d --name babelarr \
   -v /path/to/config:/config \
   -e WATCH_DIRS="/data" \
   -e TARGET_LANGS="nl,bs" \
-  -e LIBRETRANSLATE_URL="http://libretranslate:5000/translate" \
+  -e LIBRETRANSLATE_URL="http://libretranslate:5000/translate_file" \
   -e LOG_LEVEL="INFO" \
   babelarr
 ```
