@@ -81,7 +81,26 @@ def translate_file(src: Path, lang: str) -> None:
         files = {"file": fh}
         data = {"source": "en", "target": lang, "format": "srt"}
         resp = requests.post(API_URL, files=files, data=data, timeout=60)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError:
+            logger.error(
+                "HTTP error %s from LibreTranslate", resp.status_code
+            )
+            logger.error("Headers: %s", resp.headers)
+            logger.error("Body: %s", resp.text)
+            if logger.isEnabledFor(logging.DEBUG):
+                import tempfile
+
+                tmp = tempfile.NamedTemporaryFile(
+                    delete=False, prefix="babelarr-", suffix=".err"
+                )
+                try:
+                    tmp.write(resp.content)
+                    logger.debug("Saved failing response to %s", tmp.name)
+                finally:
+                    tmp.close()
+            raise
     output = src.with_suffix(f".{lang}.srt")
     output.write_bytes(resp.content)
     logger.info("[%s] saved -> %s", lang, output)
