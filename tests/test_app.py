@@ -1,5 +1,5 @@
 import logging
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -51,17 +51,16 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
     translator = UnstableTranslator()
     app_instance = app(translator=translator)
 
-    worker = threading.Thread(target=app_instance.worker)
-    worker.start()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
 
-    with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.ERROR):
+            app_instance.enqueue(src)
+            app_instance.tasks.join()
+            assert any("translation failed" in r.message for r in caplog.records)
+
         app_instance.enqueue(src)
         app_instance.tasks.join()
-        assert any("translation failed" in r.message for r in caplog.records)
-
-    app_instance.enqueue(src)
-    app_instance.tasks.join()
-    app_instance.shutdown_event.set()
-    worker.join()
+        app_instance.shutdown_event.set()
 
     assert src.with_suffix(".nl.srt").exists()
