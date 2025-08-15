@@ -7,26 +7,19 @@ from babelarr.app import Application
 from babelarr.config import Config
 
 
-def test_translate_file(tmp_path, monkeypatch):
+class DummyTranslator:
+    result = b"1\n00:00:00,000 --> 00:00:02,000\nHallo\n"
+
+    def translate(self, path, lang):
+        return self.result
+
+
+def test_translate_file(tmp_path):
     # Create a dummy English subtitle file
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    # Prepare a fake response from the translation API
-    class DummyResponse:
-        status_code = 200
-        content = b"1\n00:00:00,000 --> 00:00:02,000\nHallo\n"
-
-        def raise_for_status(self):
-            pass
-
-    def fake_post(url, files, data, timeout):
-        return DummyResponse()
-
-    # Patch requests.post to use the fake response
-    monkeypatch.setattr(requests, "post", fake_post)
-
-    # Invoke translation and verify output file
+    translator = DummyTranslator()
     app = Application(
         Config(
             root_dirs=[str(tmp_path)],
@@ -35,38 +28,34 @@ def test_translate_file(tmp_path, monkeypatch):
             api_url="http://example",
             workers=1,
             queue_db=str(tmp_path / "queue.db"),
-        )
+        ),
+        translator,
     )
 
     app.translate_file(tmp_file, "nl")
     output_file = tmp_file.with_suffix(".nl.srt")
     assert output_file.exists()
-    assert output_file.read_bytes() == DummyResponse.content
+    assert output_file.read_bytes() == translator.result
     app.db.close()
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 429, 500])
-def test_translate_file_errors(tmp_path, monkeypatch, status, caplog):
+def test_translate_file_errors(tmp_path, status, caplog):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    class DummyErrorResponse:
+    class ErrorTranslator:
         def __init__(self, status_code):
             self.status_code = status_code
-            self.headers = {}
-            self.text = "error"
-            self.content = b""
 
-        def json(self):
-            return {"error": "something"}
+        def translate(self, path, lang):
+            logger = logging.getLogger("babelarr")
+            logger.error("HTTP %s from LibreTranslate: boom", self.status_code)
+            resp = requests.Response()
+            resp.status_code = self.status_code
+            raise requests.HTTPError(response=resp)
 
-        def raise_for_status(self):
-            raise requests.HTTPError(response=self)
-
-    def fake_post(url, files, data, timeout):
-        return DummyErrorResponse(status)
-
-    monkeypatch.setattr(requests, "post", fake_post)
+    translator = ErrorTranslator(status)
     app = Application(
         Config(
             root_dirs=[str(tmp_path)],
@@ -75,7 +64,8 @@ def test_translate_file_errors(tmp_path, monkeypatch, status, caplog):
             api_url="http://example",
             workers=1,
             queue_db=str(tmp_path / "queue.db"),
-        )
+        ),
+        translator,
     )
     try:
         with caplog.at_level(logging.ERROR):

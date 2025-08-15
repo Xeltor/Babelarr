@@ -5,6 +5,11 @@ from babelarr.app import Application, SrtHandler
 from babelarr.config import Config
 
 
+class DummyTranslator:
+    def translate(self, path, lang):
+        return b""
+
+
 def test_srt_handler_enqueue(monkeypatch, tmp_path):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
@@ -19,7 +24,7 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
         workers=1,
         queue_db=str(tmp_path / "queue.db"),
     )
-    app = Application(config)
+    app = Application(config, DummyTranslator())
 
     def fake_enqueue(p):
         called["path"] = p
@@ -43,7 +48,7 @@ def test_watch_lifecycle(monkeypatch, tmp_path):
         workers=1,
         queue_db=str(tmp_path / "queue.db"),
     )
-    app_instance = Application(config)
+    app_instance = Application(config, DummyTranslator())
 
     events = {"start": False, "stop": False, "join": False, "scheduled": []}
 
