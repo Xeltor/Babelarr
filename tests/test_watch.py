@@ -30,4 +30,4 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
     handler.on_created(event)
 
     assert called['path'] == path
-    app.conn.close()
+    app.db.close()

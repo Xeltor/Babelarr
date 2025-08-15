@@ -1,6 +1,5 @@
 import logging
 import queue
-import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -11,6 +10,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from config import Config
+from queue_db import QueueRepository
 
 logger = logging.getLogger("babelarr")
 
@@ -37,10 +37,7 @@ class Application:
     def __init__(self, config: Config):
         self.config = config
         self.tasks: queue.Queue[Path] = queue.Queue()
-        self.db_lock = threading.Lock()
-        self.conn = sqlite3.connect(self.config.queue_db, check_same_thread=False)
-        self.conn.execute("CREATE TABLE IF NOT EXISTS queue (path TEXT PRIMARY KEY)")
-        self.conn.commit()
+        self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
 
     def translate_file(self, src: Path, lang: str) -> None:
@@ -97,9 +94,7 @@ class Application:
                 logger.error("translation failed for %s: %s", path, exc)
                 logger.debug("Traceback:", exc_info=True)
             finally:
-                with self.db_lock:
-                    self.conn.execute("DELETE FROM queue WHERE path = ?", (str(path),))
-                    self.conn.commit()
+                self.db.remove(path)
                 self.tasks.task_done()
                 logger.debug("Finished processing %s", path)
 
@@ -117,12 +112,7 @@ class Application:
         if not self.needs_translation(path):
             logger.debug("All translations present for %s; skipping", path)
             return
-        with self.db_lock:
-            cur = self.conn.execute(
-                "INSERT OR IGNORE INTO queue(path) VALUES (?)", (str(path),)
-            )
-            self.conn.commit()
-        if cur.rowcount:
+        if self.db.add(path):
             self.tasks.put(path)
             logger.info("queued %s", path)
         else:
@@ -137,10 +127,8 @@ class Application:
 
     def load_pending(self):
         logger.info("Loading pending tasks")
-        with self.db_lock:
-            rows = self.conn.execute("SELECT path FROM queue").fetchall()
-        for (p,) in rows:
-            self.tasks.put(Path(p))
+        for p in self.db.all():
+            self.tasks.put(p)
             logger.info("restored %s", p)
 
     def watch(self):
@@ -182,5 +170,5 @@ class Application:
         watcher.join()
         for t in workers:
             t.join()
-        self.conn.close()
+        self.db.close()
         logger.info("Shutdown complete")
