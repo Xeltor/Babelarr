@@ -4,23 +4,15 @@ import threading
 import time
 from pathlib import Path
 
-import requests
 import schedule
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import Config
 from .queue_db import QueueRepository
+from .translator import Translator
 
 logger = logging.getLogger("babelarr")
-
-ERROR_MESSAGES = {
-    400: "Bad Request",
-    403: "Forbidden",
-    404: "Not Found",
-    429: "Too Many Requests",
-    500: "Server Error",
-}
 
 
 class SrtHandler(FileSystemEventHandler):
@@ -34,52 +26,18 @@ class SrtHandler(FileSystemEventHandler):
 
 
 class Application:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, translator: Translator):
         self.config = config
+        self.translator = translator
         self.tasks: queue.Queue[Path] = queue.Queue()
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
 
     def translate_file(self, src: Path, lang: str) -> None:
         logger.debug("Translating %s to %s", src, lang)
-        with open(src, "rb") as fh:
-            files = {"file": fh}
-            data = {"source": "en", "target": lang, "format": "srt"}
-            resp = requests.post(
-                self.config.api_url, files=files, data=data, timeout=60
-            )
-            if resp.status_code != 200:
-                message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
-                try:
-                    err_json = resp.json()
-                    detail = (
-                        err_json.get("error")
-                        or err_json.get("message")
-                        or err_json.get("detail")
-                    )
-                    if detail:
-                        message = f"{message}: {detail}"
-                except ValueError:
-                    pass
-                logger.error(
-                    "HTTP %s from LibreTranslate: %s", resp.status_code, message
-                )
-                logger.error("Headers: %s", resp.headers)
-                logger.error("Body: %s", resp.text)
-                if logger.isEnabledFor(logging.DEBUG):
-                    import tempfile
-
-                    tmp = tempfile.NamedTemporaryFile(
-                        delete=False, prefix="babelarr-", suffix=".err"
-                    )
-                    try:
-                        tmp.write(resp.content)
-                        logger.debug("Saved failing response to %s", tmp.name)
-                    finally:
-                        tmp.close()
-                resp.raise_for_status()
+        content = self.translator.translate(src, lang)
         output = src.with_suffix(f".{lang}.srt")
-        output.write_bytes(resp.content)
+        output.write_bytes(content)
         logger.info("[%s] saved -> %s", lang, output)
 
     def worker(self):

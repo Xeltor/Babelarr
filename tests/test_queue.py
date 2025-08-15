@@ -4,6 +4,11 @@ from babelarr.app import Application
 from babelarr.config import Config
 
 
+class DummyTranslator:
+    def translate(self, path, lang):
+        return b""
+
+
 def make_config(tmp_path, db_path, src_ext):
     return Config(
         root_dirs=[str(tmp_path)],
@@ -20,7 +25,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch):
     sub_file = tmp_path / "video.en.srt"
     sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    app = Application(make_config(tmp_path, db_path, ".srt"))
+    app = Application(make_config(tmp_path, db_path, ".srt"), DummyTranslator())
 
     def fake_translate_file(src, lang):
         src.with_suffix(f".{lang}.srt").write_text("Hallo")
@@ -47,7 +52,7 @@ def test_enqueue_skips_when_translated(tmp_path):
     sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
     sub_file.with_suffix(".nl.srt").write_text("Hallo")
 
-    app = Application(make_config(tmp_path, db_path, ".en.srt"))
+    app = Application(make_config(tmp_path, db_path, ".en.srt"), DummyTranslator())
 
     app.enqueue(sub_file)
 

@@ -4,6 +4,7 @@ import signal
 
 from .app import Application
 from .config import Config
+from .translator import LibreTranslateClient
 
 logger = logging.getLogger("babelarr")
 
@@ -14,7 +15,8 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
     config = Config.from_env()
-    app = Application(config)
+    translator = LibreTranslateClient(config.api_url)
+    app = Application(config, translator)
 
     def handle_signal(signum, frame):
         logger.info("Received signal %s", signum)
