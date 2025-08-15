@@ -1,9 +1,9 @@
 import logging
-
 import pytest
 import requests
 
-from main import translate_file
+from app import Application
+from config import Config
 
 
 def test_translate_file(tmp_path, monkeypatch):
@@ -26,10 +26,22 @@ def test_translate_file(tmp_path, monkeypatch):
     monkeypatch.setattr(requests, 'post', fake_post)
 
     # Invoke translation and verify output file
-    translate_file(tmp_file, 'nl')
+    app = Application(
+        Config(
+            root_dirs=[str(tmp_path)],
+            target_langs=["nl"],
+            src_ext=".en.srt",
+            api_url="http://example",
+            workers=1,
+            queue_db=str(tmp_path / "queue.db"),
+        )
+    )
+
+    app.translate_file(tmp_file, 'nl')
     output_file = tmp_file.with_suffix('.nl.srt')
     assert output_file.exists()
     assert output_file.read_bytes() == DummyResponse.content
+    app.conn.close()
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 429, 500])
@@ -54,7 +66,20 @@ def test_translate_file_errors(tmp_path, monkeypatch, status, caplog):
         return DummyErrorResponse(status)
 
     monkeypatch.setattr(requests, "post", fake_post)
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(requests.HTTPError):
-            translate_file(tmp_file, "nl")
-        assert str(status) in caplog.text
+    app = Application(
+        Config(
+            root_dirs=[str(tmp_path)],
+            target_langs=["nl"],
+            src_ext=".en.srt",
+            api_url="http://example",
+            workers=1,
+            queue_db=str(tmp_path / "queue.db"),
+        )
+    )
+    try:
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(requests.HTTPError):
+                app.translate_file(tmp_file, "nl")
+            assert str(status) in caplog.text
+    finally:
+        app.conn.close()
