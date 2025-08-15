@@ -12,6 +12,9 @@ class DummyTranslator:
     def translate(self, path, lang):
         return self.result
 
+    def close(self):
+        pass
+
 
 def test_translate_file(tmp_path, app):
     # Create a dummy English subtitle file
@@ -66,12 +69,13 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
         resp._content = b"ok"
         return resp
 
-    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests.Session, "post", fake_post)
 
     translator = LibreTranslateClient("http://example", retry_count=3, backoff_delay=0)
 
     with caplog.at_level(logging.WARNING):
         result = translator.translate(tmp_file, "nl")
+    translator.close()
 
     assert result == b"ok"
     assert attempts["count"] == 3
@@ -89,13 +93,14 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
         attempts["count"] += 1
         raise requests.ConnectionError("boom")
 
-    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests.Session, "post", fake_post)
 
     translator = LibreTranslateClient("http://example", retry_count=2, backoff_delay=0)
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(requests.ConnectionError):
             translator.translate(tmp_file, "nl")
+    translator.close()
 
     assert attempts["count"] == 2
     assert "failed after 2 attempts" in caplog.text

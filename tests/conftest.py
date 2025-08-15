@@ -8,6 +8,9 @@ class _DummyTranslator:
     def translate(self, path, lang):
         return b""
 
+    def close(self):
+        pass
+
 
 @pytest.fixture
 def config(tmp_path):
@@ -41,3 +44,6 @@ def app(config):
             inst.db.close()
         except Exception:
             pass
+        close = getattr(inst.translator, "close", None)
+        if callable(close):
+            close()
