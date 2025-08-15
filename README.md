@@ -19,10 +19,12 @@ docker run -d --name babelarr \
   -v /path/to/config:/config \
   -e WATCH_DIRS="/data" \
   -e TARGET_LANGS="nl,bs" \
-  -e LIBRETRANSLATE_URL="http://libretranslate:5000/translate_file" \
+  -e LIBRETRANSLATE_URL="http://libretranslate:5000" \
   -e LOG_LEVEL="INFO" \
   babelarr
 ```
+
+`LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
 
 The application scans for new `.en.srt` files on startup, upon file creation and every hour thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`).
 
