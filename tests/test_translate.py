@@ -5,6 +5,7 @@ import requests
 
 from babelarr.app import Application
 from babelarr.config import Config
+from babelarr.translator import LibreTranslateClient
 
 
 class DummyTranslator:
@@ -28,6 +29,8 @@ def test_translate_file(tmp_path):
             api_url="http://example",
             workers=1,
             queue_db=str(tmp_path / "queue.db"),
+            retry_count=2,
+            backoff_delay=0,
         ),
         translator,
     )
@@ -64,6 +67,8 @@ def test_translate_file_errors(tmp_path, status, caplog):
             api_url="http://example",
             workers=1,
             queue_db=str(tmp_path / "queue.db"),
+            retry_count=2,
+            backoff_delay=0,
         ),
         translator,
     )
@@ -74,3 +79,53 @@ def test_translate_file_errors(tmp_path, status, caplog):
             assert str(status) in caplog.text
     finally:
         app.db.close()
+
+
+def test_retry_success(monkeypatch, tmp_path, caplog):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    attempts = {"count": 0}
+
+    def fake_post(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise requests.ConnectionError("boom")
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"ok"
+        return resp
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    translator = LibreTranslateClient("http://example", retry_count=3, backoff_delay=0)
+
+    with caplog.at_level(logging.WARNING):
+        result = translator.translate(tmp_file, "nl")
+
+    assert result == b"ok"
+    assert attempts["count"] == 3
+    retry_logs = [r for r in caplog.records if "Attempt" in r.message]
+    assert len(retry_logs) == 2
+
+
+def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    attempts = {"count": 0}
+
+    def fake_post(*args, **kwargs):
+        attempts["count"] += 1
+        raise requests.ConnectionError("boom")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    translator = LibreTranslateClient("http://example", retry_count=2, backoff_delay=0)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(requests.ConnectionError):
+            translator.translate(tmp_file, "nl")
+
+    assert attempts["count"] == 2
+    assert "failed after 2 attempts" in caplog.text

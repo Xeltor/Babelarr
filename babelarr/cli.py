@@ -15,7 +15,9 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
     config = Config.from_env()
-    translator = LibreTranslateClient(config.api_url)
+    translator = LibreTranslateClient(
+        config.api_url, config.retry_count, config.backoff_delay
+    )
     app = Application(config, translator)
 
     def handle_signal(signum, frame):
