@@ -1,5 +1,7 @@
-import main
 from watchdog.events import FileCreatedEvent
+
+from app import Application, SrtHandler
+from config import Config
 
 
 def test_srt_handler_enqueue(monkeypatch, tmp_path):
@@ -8,13 +10,24 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
 
     called = {}
 
+    config = Config(
+        root_dirs=[str(tmp_path)],
+        target_langs=["nl"],
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=str(tmp_path / "queue.db"),
+    )
+    app = Application(config)
+
     def fake_enqueue(p):
         called['path'] = p
 
-    monkeypatch.setattr(main, "enqueue", fake_enqueue)
+    monkeypatch.setattr(app, "enqueue", fake_enqueue)
 
-    handler = main.SrtHandler()
+    handler = SrtHandler(app)
     event = FileCreatedEvent(str(path))
     handler.on_created(event)
 
     assert called['path'] == path
+    app.conn.close()
