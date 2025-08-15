@@ -23,6 +23,8 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
         api_url="http://example",
         workers=1,
         queue_db=str(tmp_path / "queue.db"),
+        retry_count=2,
+        backoff_delay=0,
     )
     app = Application(config, DummyTranslator())
 
@@ -47,6 +49,8 @@ def test_watch_lifecycle(monkeypatch, tmp_path):
         api_url="http://example",
         workers=1,
         queue_db=str(tmp_path / "queue.db"),
+        retry_count=2,
+        backoff_delay=0,
     )
     app_instance = Application(config, DummyTranslator())
 

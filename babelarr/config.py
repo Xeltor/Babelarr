@@ -14,6 +14,8 @@ class Config:
     api_url: str
     workers: int
     queue_db: str
+    retry_count: int = 3
+    backoff_delay: float = 1.0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -59,15 +61,20 @@ class Config:
         queue_db = os.environ.get("QUEUE_DB", "/config/queue.db")
         Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
 
+        retry_count = int(os.environ.get("RETRY_COUNT", "3"))
+        backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
+
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_EXT=%s API_URL=%s "
-            "WORKERS=%s QUEUE_DB=%s",
+            "WORKERS=%s QUEUE_DB=%s RETRY_COUNT=%s BACKOFF_DELAY=%s",
             root_dirs,
             target_langs,
             src_ext,
             api_url,
             workers,
             queue_db,
+            retry_count,
+            backoff_delay,
         )
 
         return cls(
@@ -77,4 +84,6 @@ class Config:
             api_url=api_url,
             workers=workers,
             queue_db=queue_db,
+            retry_count=retry_count,
+            backoff_delay=backoff_delay,
         )

@@ -17,6 +17,8 @@ def make_config(tmp_path, db_path, src_ext):
         api_url="http://example",
         workers=1,
         queue_db=str(db_path),
+        retry_count=2,
+        backoff_delay=0,
     )
 
 
