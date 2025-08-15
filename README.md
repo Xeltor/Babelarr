@@ -43,3 +43,21 @@ Run the test suite with [pytest](https://docs.pytest.org/):
 ```bash
 pytest
 ```
+
+## Development
+
+This project uses [pre-commit](https://pre-commit.com/) to lint and type-check
+the codebase.
+
+Install the hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Run all checks:
+
+```bash
+pre-commit run --all-files
+```

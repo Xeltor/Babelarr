@@ -2,10 +2,11 @@ import logging
 import os
 import signal
 
-from .config import Config
 from .app import Application
+from .config import Config
 
 logger = logging.getLogger("babelarr")
+
 
 def main() -> None:
     logging.basicConfig(

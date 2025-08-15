@@ -14,7 +14,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 
 
 class QueueRepository:
@@ -52,7 +52,6 @@ class QueueRepository:
 
         if getattr(self, "conn", None):
             self.conn.close()
-            self.conn = None
 
     # ------------------------------------------------------------------
     # CRUD operations
@@ -87,4 +86,3 @@ class QueueRepository:
 
 
 __all__ = ["QueueRepository"]
-

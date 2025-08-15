@@ -13,4 +13,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements-dev.txt
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files
       - run: pytest -q
