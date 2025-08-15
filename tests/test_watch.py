@@ -22,7 +22,7 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
     app = Application(config)
 
     def fake_enqueue(p):
-        called['path'] = p
+        called["path"] = p
 
     monkeypatch.setattr(app, "enqueue", fake_enqueue)
 
@@ -30,7 +30,7 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path):
     event = FileCreatedEvent(str(path))
     handler.on_created(event)
 
-    assert called['path'] == path
+    assert called["path"] == path
     app.db.close()
 
 
