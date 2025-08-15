@@ -35,11 +35,10 @@ def test_enqueue_and_worker(tmp_path, monkeypatch):
     worker.join(timeout=3)
 
     assert sub_file.with_suffix(".nl.srt").read_text() == "Hallo"
-    with app.db_lock:
-        rows = app.conn.execute("SELECT path FROM queue").fetchall()
+    rows = app.db.all()
     assert rows == []
 
-    app.conn.close()
+    app.db.close()
 
 
 def test_enqueue_skips_when_translated(tmp_path):
@@ -53,8 +52,7 @@ def test_enqueue_skips_when_translated(tmp_path):
     app.enqueue(sub_file)
 
     assert app.tasks.empty()
-    with app.db_lock:
-        rows = app.conn.execute("SELECT path FROM queue").fetchall()
+    rows = app.db.all()
     assert rows == []
 
-    app.conn.close()
+    app.db.close()

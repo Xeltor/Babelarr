@@ -41,7 +41,7 @@ def test_translate_file(tmp_path, monkeypatch):
     output_file = tmp_file.with_suffix('.nl.srt')
     assert output_file.exists()
     assert output_file.read_bytes() == DummyResponse.content
-    app.conn.close()
+    app.db.close()
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 429, 500])
@@ -82,4 +82,4 @@ def test_translate_file_errors(tmp_path, monkeypatch, status, caplog):
                 app.translate_file(tmp_file, "nl")
             assert str(status) in caplog.text
     finally:
-        app.conn.close()
+        app.db.close()
