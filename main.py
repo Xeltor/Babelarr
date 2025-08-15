@@ -1,32 +1,5 @@
 #!/usr/bin/env python3
-import logging
-import os
-import signal
-
-from config import Config
-from app import Application
-
-# Logging setup
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger("babelarr")
-
-
-def main() -> None:
-    config = Config.from_env()
-    app = Application(config)
-
-    def handle_signal(signum, frame):
-        logger.info("Received signal %s", signum)
-        app.shutdown_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, handle_signal)
-
-    app.run()
-
+from babelarr.cli import main
 
 if __name__ == "__main__":
     main()
