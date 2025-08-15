@@ -36,7 +36,7 @@ class LibreTranslateClient:
     def __init__(
         self, api_url: str, retry_count: int = 3, backoff_delay: float = 1.0
     ) -> None:
-        self.api_url = api_url
+        self.api_url = api_url.rstrip("/") + "/translate_file"
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
 

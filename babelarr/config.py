@@ -44,9 +44,7 @@ class Config:
             seen.add(normalized)
 
         src_ext = os.environ.get("SRC_EXT", ".en.srt")
-        api_url = os.environ.get(
-            "LIBRETRANSLATE_URL", "http://libretranslate:5000/translate_file"
-        )
+        api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
         MAX_WORKERS = 10
         requested = int(os.environ.get("WORKERS", "1"))
