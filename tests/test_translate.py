@@ -2,8 +2,8 @@ import logging
 import pytest
 import requests
 
-from app import Application
-from config import Config
+from babelarr.app import Application
+from babelarr.config import Config
 
 
 def test_translate_file(tmp_path, monkeypatch):

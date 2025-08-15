@@ -9,8 +9,8 @@ import schedule
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from config import Config
-from queue_db import QueueRepository
+from .config import Config
+from .queue_db import QueueRepository
 
 logger = logging.getLogger("babelarr")
 

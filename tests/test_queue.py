@@ -1,7 +1,7 @@
 import threading
 
-from app import Application
-from config import Config
+from babelarr.app import Application
+from babelarr.config import Config
 
 
 def make_config(tmp_path, db_path, src_ext):

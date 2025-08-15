@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "babelarr"
+version = "0.1.0"
+description = "Subtitle translation service"
+authors = [{name = "Unknown"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "watchdog",
+    "schedule",
+    "requests",
+]
+
+[project.scripts]
+babelarr = "babelarr.cli:main"

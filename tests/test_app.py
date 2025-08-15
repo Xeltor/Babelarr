@@ -3,9 +3,8 @@ import threading
 
 import requests
 
-import app
-from app import Application
-from config import Config
+from babelarr.app import Application
+from babelarr.config import Config
 
 
 def make_config(tmp_path):

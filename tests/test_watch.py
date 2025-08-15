@@ -1,8 +1,8 @@
 from watchdog.events import FileCreatedEvent
 
-import app
-from app import Application, SrtHandler
-from config import Config
+import babelarr.app as app
+from babelarr.app import Application, SrtHandler
+from babelarr.config import Config
 
 
 def test_srt_handler_enqueue(monkeypatch, tmp_path):
