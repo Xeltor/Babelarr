@@ -151,19 +151,32 @@ def worker():
             logger.debug("Finished processing %s", path)
 
 
+def needs_translation(path: Path) -> bool:
+    """Return True if any target language is missing for the given subtitle."""
+    for lang in TARGET_LANGS:
+        out = path.with_suffix(f".{lang}.srt")
+        if not out.exists():
+            return True
+    return False
+
+
 def enqueue(path: Path):
     logger.debug("Attempting to enqueue %s", path)
-    if path.suffix == SRC_EXT and path.is_file():
-        with db_lock:
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO queue(path) VALUES (?)", (str(path),)
-            )
-            conn.commit()
-        if cur.rowcount:
-            tasks.put(path)
-            logger.info("queued %s", path)
-        else:
-            logger.debug("%s already queued", path)
+    if not str(path).endswith(SRC_EXT) or not path.is_file():
+        return
+    if not needs_translation(path):
+        logger.debug("All translations present for %s; skipping", path)
+        return
+    with db_lock:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO queue(path) VALUES (?)", (str(path),)
+        )
+        conn.commit()
+    if cur.rowcount:
+        tasks.put(path)
+        logger.info("queued %s", path)
+    else:
+        logger.debug("%s already queued", path)
 
 
 def full_scan():

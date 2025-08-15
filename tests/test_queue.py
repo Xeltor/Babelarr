@@ -38,3 +38,26 @@ def test_enqueue_and_worker(tmp_path, monkeypatch):
     assert rows == []
 
     main.conn.close()
+
+
+def test_enqueue_skips_when_translated(tmp_path, monkeypatch):
+    db_path = tmp_path / "queue.db"
+    sub_file = tmp_path / "video.en.srt"
+    sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+    sub_file.with_suffix(".nl.srt").write_text("Hallo")
+
+    monkeypatch.setenv("QUEUE_DB", str(db_path))
+    monkeypatch.setenv("TARGET_LANGS", "nl")
+    monkeypatch.setenv("SRC_EXT", ".en.srt")
+
+    import main
+    importlib.reload(main)
+
+    main.enqueue(sub_file)
+
+    assert main.tasks.empty()
+    with main.db_lock:
+        rows = main.conn.execute("SELECT path FROM queue").fetchall()
+    assert rows == []
+
+    main.conn.close()
