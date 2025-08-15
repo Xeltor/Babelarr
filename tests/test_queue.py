@@ -1,4 +1,4 @@
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 
 def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
@@ -14,11 +14,10 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
     app_instance.enqueue(sub_file)
-    worker = threading.Thread(target=app_instance.worker)
-    worker.start()
-    app_instance.tasks.join()
-    app_instance.shutdown_event.set()
-    worker.join(timeout=3)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+        app_instance.tasks.join()
+        app_instance.shutdown_event.set()
 
     assert sub_file.with_suffix(".nl.srt").read_text() == "Hallo"
     rows = app_instance.db.all()

@@ -2,6 +2,7 @@ import logging
 import queue
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import schedule
@@ -116,11 +117,9 @@ class Application:
 
     def run(self):
         logger.info("Starting %d worker threads", self.config.workers)
-        workers = []
+        executor = ThreadPoolExecutor(max_workers=self.config.workers)
         for _ in range(self.config.workers):
-            t = threading.Thread(target=self.worker)
-            t.start()
-            workers.append(t)
+            executor.submit(self.worker)
 
         self.load_pending()
         self.full_scan()
@@ -136,7 +135,6 @@ class Application:
 
         logger.info("Shutdown initiated")
         watcher.join()
-        for t in workers:
-            t.join()
+        executor.shutdown(wait=True)
         self.db.close()
         logger.info("Shutdown complete")
