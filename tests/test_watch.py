@@ -1,3 +1,5 @@
+import logging
+
 from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileMovedEvent
 
 import babelarr.app as app_module
@@ -96,6 +98,40 @@ def test_srt_handler_debounce(monkeypatch, tmp_path, app):
 
     assert called["path"] == path
     assert path.read_text() == "part1part2"
+
+
+def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
+    path = tmp_path / "waiting.en.srt"
+    path.write_text("initial")
+
+    called = {}
+    app_instance = app()
+    app_instance.config.debounce = 0.01
+
+    def fake_enqueue(p):
+        called["path"] = p
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+    handler._max_wait = 0.05
+
+    from itertools import count
+    from types import SimpleNamespace
+
+    sizes = count(1)
+
+    def fake_stat(self):
+        return SimpleNamespace(st_size=next(sizes))
+
+    monkeypatch.setattr(type(path), "stat", fake_stat)
+
+    event = FileCreatedEvent(str(path))
+    with caplog.at_level(logging.WARNING):
+        handler.on_created(event)
+
+    assert "path" not in called
+    assert "timeout" in caplog.text.lower()
 
 
 def test_watch_lifecycle(monkeypatch, tmp_path, app):
