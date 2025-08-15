@@ -1,4 +1,4 @@
-from watchdog.events import FileCreatedEvent
+from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileMovedEvent
 
 import babelarr.app as app_module
 from babelarr.app import SrtHandler
@@ -22,6 +22,80 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
     handler.on_created(event)
 
     assert called["path"] == path
+
+
+def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
+    path = tmp_path / "sample.en.srt"
+    path.write_text("example")
+    (tmp_path / "sample.en.nl.srt").write_text("old")
+
+    called = {}
+
+    app_instance = app()
+
+    def fake_enqueue(p):
+        called["path"] = p
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+    event = FileModifiedEvent(str(path))
+    handler.on_modified(event)
+
+    assert called["path"] == path
+    assert not (tmp_path / "sample.en.nl.srt").exists()
+
+
+def test_srt_handler_enqueue_moved(monkeypatch, tmp_path, app):
+    src = tmp_path / "old.en.srt"
+    dest = tmp_path / "new.en.srt"
+    dest.write_text("example")
+
+    called = {}
+
+    app_instance = app()
+
+    def fake_enqueue(p):
+        called["path"] = p
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+    event = FileMovedEvent(str(src), str(dest))
+    handler.on_moved(event)
+
+    assert called["path"] == dest
+
+
+def test_srt_handler_debounce(monkeypatch, tmp_path, app):
+    path = tmp_path / "partial.en.srt"
+    path.write_text("part1")
+
+    called = {}
+    app_instance = app()
+    app_instance.config.debounce = 0.01
+
+    def fake_enqueue(p):
+        called["path"] = p
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+
+    import threading
+    import time
+
+    def append_later():
+        time.sleep(0.005)
+        with path.open("a") as fh:
+            fh.write("part2")
+
+    threading.Thread(target=append_later).start()
+    event = FileCreatedEvent(str(path))
+    handler.on_created(event)
+
+    assert called["path"] == path
+    assert path.read_text() == "part1part2"
 
 
 def test_watch_lifecycle(monkeypatch, tmp_path, app):

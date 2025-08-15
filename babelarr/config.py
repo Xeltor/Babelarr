@@ -8,6 +8,20 @@ logger = logging.getLogger("babelarr")
 
 @dataclass
 class Config:
+    """Application configuration.
+
+    Attributes:
+        root_dirs: Directories to watch for subtitle files.
+        target_langs: Languages to translate into.
+        src_ext: Source subtitle file extension.
+        api_url: Base URL of the translation API.
+        workers: Number of translation worker threads.
+        queue_db: Path to the SQLite queue database.
+        retry_count: Translation retry attempts.
+        backoff_delay: Initial backoff delay between retries.
+        debounce: Seconds to wait for file changes to settle before enqueueing.
+    """
+
     root_dirs: list[str]
     target_langs: list[str]
     src_ext: str
@@ -16,6 +30,7 @@ class Config:
     queue_db: str
     retry_count: int = 3
     backoff_delay: float = 1.0
+    debounce: float = 0.1
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -61,10 +76,11 @@ class Config:
 
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
         backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
+        debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_EXT=%s API_URL=%s "
-            "WORKERS=%s QUEUE_DB=%s RETRY_COUNT=%s BACKOFF_DELAY=%s",
+            "WORKERS=%s QUEUE_DB=%s RETRY_COUNT=%s BACKOFF_DELAY=%s DEBOUNCE=%s",
             root_dirs,
             target_langs,
             src_ext,
@@ -73,6 +89,7 @@ class Config:
             queue_db,
             retry_count,
             backoff_delay,
+            debounce,
         )
 
         return cls(
@@ -84,4 +101,5 @@ class Config:
             queue_db=queue_db,
             retry_count=retry_count,
             backoff_delay=backoff_delay,
+            debounce=debounce,
         )

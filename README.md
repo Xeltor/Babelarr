@@ -28,6 +28,8 @@ docker run -d --name babelarr \
 
 The application scans for new `.en.srt` files on startup, upon file creation and every hour thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`).
 
+Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
+
 Queued translation tasks are stored in a small SQLite database (`/config/queue.db` by default) so that pending work survives
 container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
 
@@ -36,6 +38,8 @@ The container runs as a non-root user with UID and GID `1000`. Ensure the host p
 `LOG_LEVEL` controls the verbosity of console output and accepts standard logging levels such as `DEBUG`, `INFO`, `WARNING` and `ERROR`.
 
 `WORKERS` sets the maximum number of concurrent translation threads. Values above 10 are capped to prevent LibreTranslate from becoming unstable due to excessive threading.
+
+`DEBOUNCE_SECONDS` configures the delay used to verify that a file has finished writing before it is queued. Increase this value if subtitle files are large or written slowly.
 
 
 ## Testing
