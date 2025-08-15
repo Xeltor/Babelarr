@@ -8,6 +8,7 @@ COPY pyproject.toml ./
 COPY babelarr ./babelarr
 RUN pip install --no-cache-dir .
 
+COPY . .
 # Create mount points for subtitles and the persistent queue database
 RUN mkdir -p /data /config && chown -R app:app /data /config /app
 
@@ -16,4 +17,4 @@ USER app:app
 # Example environment variables:
 #   -e WATCH_DIRS="/subs:/incoming"
 #   -e TARGET_LANGS="nl,bs"
-CMD ["babelarr"]
+ENTRYPOINT ["babelarr"]
