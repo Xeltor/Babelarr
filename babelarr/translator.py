@@ -29,6 +29,9 @@ class Translator(Protocol):
         Returns the translated subtitle bytes or raises an exception.
         """
 
+    def close(self) -> None:
+        """Close any open resources."""
+
 
 class LibreTranslateClient:
     """Translator implementation using the LibreTranslate API."""
@@ -39,6 +42,7 @@ class LibreTranslateClient:
         self.api_url = api_url.rstrip("/") + "/translate_file"
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
+        self.session = requests.Session()
 
     def translate(self, path: Path, lang: str) -> bytes:
         attempt = 0
@@ -48,7 +52,7 @@ class LibreTranslateClient:
                 with open(path, "rb") as fh:
                     files = {"file": fh}
                     data = {"source": "en", "target": lang, "format": "srt"}
-                    resp = requests.post(
+                    resp = self.session.post(
                         self.api_url, files=files, data=data, timeout=60
                     )
                 if resp.status_code != 200:
@@ -98,3 +102,6 @@ class LibreTranslateClient:
                     delay,
                 )
                 time.sleep(delay)
+
+    def close(self) -> None:
+        self.session.close()

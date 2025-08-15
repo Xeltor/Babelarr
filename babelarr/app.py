@@ -176,4 +176,7 @@ class Application:
         watcher.join()
         executor.shutdown(wait=True)
         self.db.close()
+        close = getattr(self.translator, "close", None)
+        if callable(close):
+            close()
         logger.info("Shutdown complete")
