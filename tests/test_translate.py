@@ -3,8 +3,6 @@ import logging
 import pytest
 import requests
 
-from babelarr.app import Application
-from babelarr.config import Config
 from babelarr.translator import LibreTranslateClient
 
 
@@ -15,35 +13,22 @@ class DummyTranslator:
         return self.result
 
 
-def test_translate_file(tmp_path):
+def test_translate_file(tmp_path, app):
     # Create a dummy English subtitle file
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
     translator = DummyTranslator()
-    app = Application(
-        Config(
-            root_dirs=[str(tmp_path)],
-            target_langs=["nl"],
-            src_ext=".en.srt",
-            api_url="http://example",
-            workers=1,
-            queue_db=str(tmp_path / "queue.db"),
-            retry_count=2,
-            backoff_delay=0,
-        ),
-        translator,
-    )
+    app_instance = app(translator=translator)
 
-    app.translate_file(tmp_file, "nl")
+    app_instance.translate_file(tmp_file, "nl")
     output_file = tmp_file.with_suffix(".nl.srt")
     assert output_file.exists()
     assert output_file.read_bytes() == translator.result
-    app.db.close()
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 429, 500])
-def test_translate_file_errors(tmp_path, status, caplog):
+def test_translate_file_errors(tmp_path, status, caplog, app):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
@@ -59,26 +44,11 @@ def test_translate_file_errors(tmp_path, status, caplog):
             raise requests.HTTPError(response=resp)
 
     translator = ErrorTranslator(status)
-    app = Application(
-        Config(
-            root_dirs=[str(tmp_path)],
-            target_langs=["nl"],
-            src_ext=".en.srt",
-            api_url="http://example",
-            workers=1,
-            queue_db=str(tmp_path / "queue.db"),
-            retry_count=2,
-            backoff_delay=0,
-        ),
-        translator,
-    )
-    try:
-        with caplog.at_level(logging.ERROR):
-            with pytest.raises(requests.HTTPError):
-                app.translate_file(tmp_file, "nl")
-            assert str(status) in caplog.text
-    finally:
-        app.db.close()
+    app_instance = app(translator=translator)
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(requests.HTTPError):
+            app_instance.translate_file(tmp_file, "nl")
+        assert str(status) in caplog.text
 
 
 def test_retry_success(monkeypatch, tmp_path, caplog):

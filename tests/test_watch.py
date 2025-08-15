@@ -1,58 +1,31 @@
 from watchdog.events import FileCreatedEvent
 
-import babelarr.app as app
-from babelarr.app import Application, SrtHandler
-from babelarr.config import Config
+import babelarr.app as app_module
+from babelarr.app import SrtHandler
 
 
-class DummyTranslator:
-    def translate(self, path, lang):
-        return b""
-
-
-def test_srt_handler_enqueue(monkeypatch, tmp_path):
+def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
 
     called = {}
 
-    config = Config(
-        root_dirs=[str(tmp_path)],
-        target_langs=["nl"],
-        src_ext=".en.srt",
-        api_url="http://example",
-        workers=1,
-        queue_db=str(tmp_path / "queue.db"),
-        retry_count=2,
-        backoff_delay=0,
-    )
-    app = Application(config, DummyTranslator())
+    app_instance = app()
 
     def fake_enqueue(p):
         called["path"] = p
 
-    monkeypatch.setattr(app, "enqueue", fake_enqueue)
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
 
-    handler = SrtHandler(app)
+    handler = SrtHandler(app_instance)
     event = FileCreatedEvent(str(path))
     handler.on_created(event)
 
     assert called["path"] == path
-    app.db.close()
 
 
-def test_watch_lifecycle(monkeypatch, tmp_path):
-    config = Config(
-        root_dirs=[str(tmp_path)],
-        target_langs=["nl"],
-        src_ext=".en.srt",
-        api_url="http://example",
-        workers=1,
-        queue_db=str(tmp_path / "queue.db"),
-        retry_count=2,
-        backoff_delay=0,
-    )
-    app_instance = Application(config, DummyTranslator())
+def test_watch_lifecycle(monkeypatch, tmp_path, app):
+    app_instance = app()
 
     events = {"start": False, "stop": False, "join": False, "scheduled": []}
 
@@ -69,15 +42,14 @@ def test_watch_lifecycle(monkeypatch, tmp_path):
         def join(self):
             events["join"] = True
 
-    monkeypatch.setattr(app, "Observer", FakeObserver)
+    monkeypatch.setattr(app_module, "Observer", FakeObserver)
 
     def fake_sleep(seconds):
         app_instance.shutdown_event.set()
 
-    monkeypatch.setattr(app.time, "sleep", fake_sleep)
+    monkeypatch.setattr(app_module.time, "sleep", fake_sleep)
 
     app_instance.watch()
 
     assert events["start"] and events["stop"] and events["join"]
     assert events["scheduled"] == [(str(tmp_path), True)]
-    app_instance.db.close()
