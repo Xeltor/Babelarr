@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Protocol
 
 import requests
-import time
 
 logger = logging.getLogger("babelarr")
 
@@ -33,7 +33,9 @@ class Translator(Protocol):
 class LibreTranslateClient:
     """Translator implementation using the LibreTranslate API."""
 
-    def __init__(self, api_url: str, retry_count: int = 3, backoff_delay: float = 1.0) -> None:
+    def __init__(
+        self, api_url: str, retry_count: int = 3, backoff_delay: float = 1.0
+    ) -> None:
         self.api_url = api_url
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
