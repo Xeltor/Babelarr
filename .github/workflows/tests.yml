@@ -23,6 +23,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - run: make setup
+      - name: Check merge conflicts
+        run: |
+          git fetch origin main
+          git merge --no-commit --no-ff origin/main || { echo "Merge conflict detected"; exit 1; }
+          git merge --abort
       - run: make lint
 
   tests:
@@ -42,4 +47,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - run: make setup
+      - name: Check merge conflicts
+        run: |
+          git fetch origin main
+          git merge --no-commit --no-ff origin/main || { echo "Merge conflict detected"; exit 1; }
+          git merge --abort
       - run: make test
