@@ -72,7 +72,12 @@ class Config:
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
         MAX_WORKERS = 10
-        requested = int(os.environ.get("WORKERS", "1"))
+        raw_workers = os.environ.get("WORKERS", "1")
+        try:
+            requested = int(raw_workers)
+        except ValueError:
+            logger.warning("Invalid WORKERS '%s'; defaulting to 1", raw_workers)
+            requested = 1
         workers = min(requested, MAX_WORKERS)
         if requested > MAX_WORKERS:
             logger.warning(
@@ -85,10 +90,38 @@ class Config:
         Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
-        retry_count = int(os.environ.get("RETRY_COUNT", "3"))
-        backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
-        debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
-        scan_interval_minutes = int(os.environ.get("SCAN_INTERVAL_MINUTES", "60"))
+        raw_retry = os.environ.get("RETRY_COUNT", "3")
+        try:
+            retry_count = int(raw_retry)
+        except ValueError:
+            logger.warning("Invalid RETRY_COUNT '%s'; defaulting to 3", raw_retry)
+            retry_count = 3
+
+        raw_backoff = os.environ.get("BACKOFF_DELAY", "1")
+        try:
+            backoff_delay = float(raw_backoff)
+        except ValueError:
+            logger.warning("Invalid BACKOFF_DELAY '%s'; defaulting to 1.0", raw_backoff)
+            backoff_delay = 1.0
+
+        raw_debounce = os.environ.get("DEBOUNCE_SECONDS", "0.1")
+        try:
+            debounce = float(raw_debounce)
+        except ValueError:
+            logger.warning(
+                "Invalid DEBOUNCE_SECONDS '%s'; defaulting to 0.1", raw_debounce
+            )
+            debounce = 0.1
+
+        raw_scan_interval = os.environ.get("SCAN_INTERVAL_MINUTES", "60")
+        try:
+            scan_interval_minutes = int(raw_scan_interval)
+        except ValueError:
+            logger.warning(
+                "Invalid SCAN_INTERVAL_MINUTES '%s'; defaulting to 60",
+                raw_scan_interval,
+            )
+            scan_interval_minutes = 60
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
