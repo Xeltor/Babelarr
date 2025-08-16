@@ -97,3 +97,36 @@ def test_validate_environment_api_unreachable(config, monkeypatch):
 
     with pytest.raises(SystemExit):
         cli.validate_environment(config)
+
+
+def test_configurable_scan_interval(monkeypatch, config, app):
+    config.scan_interval_minutes = 5
+    instance = app(cfg=config)
+
+    import babelarr.app as app_mod
+
+    called: dict[str, int] = {}
+
+    def fake_every(n):
+        called["interval"] = n
+
+        class Job:
+            def _minutes(self):
+                return self
+
+            def do(self, func):
+                called["func"] = func
+                return self
+
+            minutes = property(_minutes)
+
+        return Job()
+
+    monkeypatch.setattr(app_mod.schedule, "every", fake_every)
+    monkeypatch.setattr(instance, "watch", lambda: None)
+    instance.shutdown_event.set()
+    instance.run()
+
+    assert called["interval"] == 5
+    assert called["func"].__self__ is instance
+    assert called["func"].__func__ is instance.full_scan.__func__

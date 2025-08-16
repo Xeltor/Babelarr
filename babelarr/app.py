@@ -202,7 +202,7 @@ class Application:
 
         self.load_pending()
         self.full_scan()
-        schedule.every().hour.do(self.full_scan)
+        schedule.every(self.config.scan_interval_minutes).minutes.do(self.full_scan)
 
         watcher = threading.Thread(target=self.watch)
         watcher.start()

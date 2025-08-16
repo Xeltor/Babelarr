@@ -22,6 +22,7 @@ class Config:
         retry_count: Translation retry attempts.
         backoff_delay: Initial backoff delay between retries.
         debounce: Seconds to wait for file changes to settle before enqueueing.
+        scan_interval_minutes: Interval between periodic full scans.
     """
 
     root_dirs: list[str]
@@ -35,6 +36,7 @@ class Config:
     retry_count: int = 3
     backoff_delay: float = 1.0
     debounce: float = 0.1
+    scan_interval_minutes: int = 60
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -86,11 +88,12 @@ class Config:
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
         backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
         debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
+        scan_interval_minutes = int(os.environ.get("SCAN_INTERVAL_MINUTES", "60"))
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
             "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
-            "BACKOFF_DELAY=%s DEBOUNCE=%s",
+            "BACKOFF_DELAY=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -101,6 +104,7 @@ class Config:
             retry_count,
             backoff_delay,
             debounce,
+            scan_interval_minutes,
         )
 
         return cls(
@@ -115,4 +119,5 @@ class Config:
             retry_count=retry_count,
             backoff_delay=backoff_delay,
             debounce=debounce,
+            scan_interval_minutes=scan_interval_minutes,
         )
