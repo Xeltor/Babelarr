@@ -12,4 +12,3 @@ def test_count_returns_number_of_items(tmp_path):
         assert repo.count() == 2
         repo.remove(Path("a"))
         assert repo.count() == 1
-
