@@ -71,7 +71,9 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
 
     monkeypatch.setattr(requests.Session, "post", fake_post)
 
-    translator = LibreTranslateClient("http://example", retry_count=3, backoff_delay=0)
+    translator = LibreTranslateClient(
+        "http://example", "en", retry_count=3, backoff_delay=0
+    )
 
     with caplog.at_level(logging.WARNING):
         result = translator.translate(tmp_file, "nl")
@@ -95,7 +97,9 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
 
     monkeypatch.setattr(requests.Session, "post", fake_post)
 
-    translator = LibreTranslateClient("http://example", retry_count=2, backoff_delay=0)
+    translator = LibreTranslateClient(
+        "http://example", "en", retry_count=2, backoff_delay=0
+    )
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(requests.ConnectionError):
@@ -122,7 +126,11 @@ def test_api_key_included(monkeypatch, tmp_path):
     monkeypatch.setattr(requests.Session, "post", fake_post)
 
     translator = LibreTranslateClient(
-        "http://example", retry_count=1, backoff_delay=0, api_key="secret"
+        "http://example",
+        "en",
+        retry_count=1,
+        backoff_delay=0,
+        api_key="secret",
     )
 
     result = translator.translate(tmp_file, "nl")
@@ -130,3 +138,32 @@ def test_api_key_included(monkeypatch, tmp_path):
 
     assert result == b"ok"
     assert captured["data"]["api_key"] == "secret"
+
+
+def test_src_lang_included(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.xx.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    captured: dict[str, dict | None] = {"data": None}
+
+    def fake_post(self, url, *, files=None, data=None, timeout=60):
+        captured["data"] = data
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"ok"
+        return resp
+
+    monkeypatch.setattr(requests.Session, "post", fake_post)
+
+    translator = LibreTranslateClient(
+        "http://example",
+        "xx",
+        retry_count=1,
+        backoff_delay=0,
+    )
+
+    result = translator.translate(tmp_file, "nl")
+    translator.close()
+
+    assert result == b"ok"
+    assert captured["data"]["source"] == "xx"
