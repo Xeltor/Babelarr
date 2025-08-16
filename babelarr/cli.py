@@ -56,6 +56,7 @@ def main() -> None:
     validate_environment(config)
     translator = LibreTranslateClient(
         config.api_url,
+        config.src_lang,
         config.retry_count,
         config.backoff_delay,
         api_key=config.api_key,
