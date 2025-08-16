@@ -83,5 +83,15 @@ class QueueRepository:
             rows = self.conn.execute("SELECT path FROM queue").fetchall()
         return [Path(p) for (p,) in rows]
 
+    def count(self) -> int:
+        """Return the number of queued paths."""
+
+        with self.lock:
+            row = self.conn.execute("SELECT COUNT(*) FROM queue").fetchone()
+        return int(row[0]) if row else 0
+
+    def __len__(self) -> int:  # pragma: no cover - simple delegation
+        return self.count()
+
 
 __all__ = ["QueueRepository"]

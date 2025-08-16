@@ -74,6 +74,32 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
     assert app_instance.output_path(src, "nl").exists()
 
 
+def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
+    sub_file = tmp_path / "video.en.srt"
+    sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    config.src_ext = ".srt"
+    app_instance = app(cfg=config)
+
+    def fake_translate_file(src, lang):
+        app_instance.output_path(src, lang).write_text("Hallo")
+
+    monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
+
+    with caplog.at_level(logging.INFO):
+        app_instance.enqueue(sub_file)
+        assert "queue length: 1" in caplog.text
+        caplog.clear()
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(app_instance.worker)
+            app_instance.tasks.join()
+            app_instance.shutdown_event.set()
+
+        assert "queue length: 0" in caplog.text
+    assert app_instance.db.all() == []
+
+
 def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
     src = tmp_path / "gone.en.srt"
     src.write_text("hello")
