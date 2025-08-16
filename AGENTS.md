@@ -53,8 +53,8 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 
 ## Testing rules
 
-- All new/changed behavior must have unit tests under `tests/`, mirroring module names (`test_<module>.py`). 
-- Keep unit tests fast and hermetic (no network or real filesystem where avoidable). 
+- All new/changed behavior must have unit tests under `tests/`, mirroring module names (`test_<module>.py`).
+- Keep unit tests fast and hermetic (no network or real filesystem where avoidable).
 - Mark slower or external tests as integration: `@pytest.mark.integration`. Unit suite must pass by default without special env.
 - When fixing a bug, first add a failing test that reproduces it; then implement the fix.
 - Target coverage for new/changed code: **≥85%** (enforce in CI if/when coverage tooling is added).
@@ -99,6 +99,15 @@ Codex (and humans) must ensure:
 - [ ] No direct env reads or hidden globals; configuration goes through `Config`.
 - [ ] No secrets or credentials are committed.
 - [ ] Functions/classes have clear docstrings and types where helpful.
+
+### Commit message format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) with a brief, imperative summary.
+
+Examples:
+
+- feat: add translation caching
+- fix: handle missing API key
 
 ---
 
