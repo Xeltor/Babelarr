@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
 from typing import Protocol
 
 import requests
+
+from .libretranslate_api import LibreTranslateAPI
 
 logger = logging.getLogger("babelarr")
 
@@ -44,19 +47,15 @@ class LibreTranslateClient:
         backoff_delay: float = 1.0,
         api_key: str | None = None,
     ) -> None:
-        api_root = api_url.rstrip("/")
-        self.api_url = api_root + "/translate_file"
         self.src_lang = src_lang
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
         self.api_key = api_key
-        self.session = requests.Session()
 
-        languages_url = api_root + "/languages"
+        self.api = LibreTranslateAPI(api_url)
+
         try:
-            resp = self.session.get(languages_url, timeout=60)
-            resp.raise_for_status()
-            languages = resp.json()
+            languages = self.api.fetch_languages()
         except requests.RequestException as exc:
             logger.error("Failed to fetch languages from LibreTranslate: %s", exc)
             raise
@@ -78,14 +77,7 @@ class LibreTranslateClient:
         while True:
             attempt += 1
             try:
-                with open(path, "rb") as fh:
-                    files = {"file": fh}
-                    data = {"source": self.src_lang, "target": lang, "format": "srt"}
-                    if self.api_key:
-                        data["api_key"] = self.api_key
-                    resp = self.session.post(
-                        self.api_url, files=files, data=data, timeout=60
-                    )
+                resp = self.api.translate_file(path, self.src_lang, lang, self.api_key)
                 if resp.status_code != 200:
                     message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
                     try:
@@ -125,7 +117,7 @@ class LibreTranslateClient:
                     pass
 
                 if download_url:
-                    download = self.session.get(download_url, timeout=60)
+                    download = self.api.download(download_url)
                     if download.status_code != 200:
                         message = ERROR_MESSAGES.get(
                             download.status_code, "Unexpected error"
@@ -159,4 +151,4 @@ class LibreTranslateClient:
                 time.sleep(delay)
 
     def close(self) -> None:
-        self.session.close()
+        asyncio.run(self.api.close())
