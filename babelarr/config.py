@@ -18,6 +18,7 @@ class Config:
         api_url: Base URL of the translation API.
         workers: Number of translation worker threads.
         queue_db: Path to the SQLite queue database.
+        api_key: Optional API key for authenticated requests.
         retry_count: Translation retry attempts.
         backoff_delay: Initial backoff delay between retries.
         debounce: Seconds to wait for file changes to settle before enqueueing.
@@ -30,6 +31,7 @@ class Config:
     api_url: str
     workers: int
     queue_db: str
+    api_key: str | None = None
     retry_count: int = 3
     backoff_delay: float = 1.0
     debounce: float = 0.1
@@ -80,19 +82,22 @@ class Config:
         queue_db = "/config/queue.db"
         Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
 
+        api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
         backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
         debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
-            "WORKERS=%s QUEUE_DB=%s RETRY_COUNT=%s BACKOFF_DELAY=%s DEBOUNCE=%s",
+            "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
+            "BACKOFF_DELAY=%s DEBOUNCE=%s",
             root_dirs,
             target_langs,
             src_lang,
             api_url,
             workers,
             queue_db,
+            bool(api_key),
             retry_count,
             backoff_delay,
             debounce,
@@ -106,6 +111,7 @@ class Config:
             api_url=api_url,
             workers=workers,
             queue_db=queue_db,
+            api_key=api_key,
             retry_count=retry_count,
             backoff_delay=backoff_delay,
             debounce=debounce,

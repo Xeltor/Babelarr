@@ -55,7 +55,10 @@ def main() -> None:
     config = Config.from_env()
     validate_environment(config)
     translator = LibreTranslateClient(
-        config.api_url, config.retry_count, config.backoff_delay
+        config.api_url,
+        config.retry_count,
+        config.backoff_delay,
+        api_key=config.api_key,
     )
     app = Application(config, translator)
 
