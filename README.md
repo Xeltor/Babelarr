@@ -45,6 +45,14 @@ docker run -d --name babelarr \
 
 Queued translation tasks are stored in a small SQLite database (`/config/queue.db`) so that pending work survives container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
 
+Check the current queue with:
+
+```bash
+babelarr queue --status [--list]
+```
+
+The command prints the number of pending items and, with `--list`, each queued path.
+
 The application scans for new source-language subtitles on startup, upon file creation and at a configurable interval (default every 60 minutes) thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`). Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
 
 If LibreTranslate is unreachable at startup or during operation, Babelarr logs the outage and pauses worker threads until the service becomes available again.

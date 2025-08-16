@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import signal
@@ -7,6 +8,7 @@ import requests
 
 from .app import Application
 from .config import Config
+from .queue_db import QueueRepository
 from .translator import LibreTranslateClient
 
 logger = logging.getLogger("babelarr")
@@ -48,12 +50,37 @@ def validate_environment(config: Config) -> None:
         )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="babelarr")
+    sub = parser.add_subparsers(dest="command")
+
+    queue_parser = sub.add_parser("queue", help="Inspect the processing queue")
+    queue_parser.add_argument(
+        "--status", action="store_true", help="Show pending item count"
+    )
+    queue_parser.add_argument("--list", action="store_true", help="List queued paths")
+
+    args = parser.parse_args(argv)
+
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
     logging.getLogger("watchdog").setLevel(logging.INFO)
+
+    if args.command == "queue":
+        if not args.status:
+            parser.error("queue command requires --status")
+        config = Config.from_env()
+        repo = QueueRepository(config.queue_db)
+        count = repo.count()
+        print(f"{count} pending item{'s' if count != 1 else ''}")
+        if args.list:
+            for path in repo.all():
+                print(path)
+        repo.close()
+        return
+
     config = Config.from_env()
     validate_environment(config)
     translator = LibreTranslateClient(

@@ -158,9 +158,16 @@ class Application:
             finally:
                 if requeue:
                     self.tasks.put(path)
-                    logger.info("Requeued %s for later processing", path)
+                    logger.info(
+                        "Requeued %s for later processing (queue length: %d)",
+                        path,
+                        self.db.count(),
+                    )
                 else:
                     self.db.remove(path)
+                    logger.info(
+                        "Completed %s (queue length: %d)", path, self.db.count()
+                    )
                 self.tasks.task_done()
                 logger.debug("Finished processing %s", path)
 
@@ -182,7 +189,7 @@ class Application:
             return
         if self.db.add(path):
             self.tasks.put(path)
-            logger.info("queued %s", path)
+            logger.info("queued %s (queue length: %d)", path, self.db.count())
         else:
             logger.debug("%s already queued", path)
 
