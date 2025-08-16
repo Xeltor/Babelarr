@@ -39,12 +39,13 @@ docker run -d --name babelarr \
 | `RETRY_COUNT` | `3` | Translation retry attempts. |
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
 | `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
+| `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 
 `LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
 
 Queued translation tasks are stored in a small SQLite database (`/config/queue.db`) so that pending work survives container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
 
-The application scans for new source-language subtitles on startup, upon file creation and every hour thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`). Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
+The application scans for new source-language subtitles on startup, upon file creation and at a configurable interval (default every 60 minutes) thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`). Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
 
 The container runs as a non-root user with UID and GID `1000`. Ensure the host paths mounted at `/data` and `/config` are writable by this user.
 
