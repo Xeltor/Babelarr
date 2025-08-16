@@ -14,7 +14,6 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
-from typing import List
 
 
 class QueueRepository:
@@ -41,7 +40,7 @@ class QueueRepository:
     # ------------------------------------------------------------------
     # Context manager support
     # ------------------------------------------------------------------
-    def __enter__(self) -> "QueueRepository":
+    def __enter__(self) -> QueueRepository:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - trivial
@@ -77,7 +76,7 @@ class QueueRepository:
             self.conn.execute("DELETE FROM queue WHERE path = ?", (str(path),))
             self.conn.commit()
 
-    def all(self) -> List[Path]:
+    def all(self) -> list[Path]:
         """Return a list of all queued paths."""
 
         with self.lock:

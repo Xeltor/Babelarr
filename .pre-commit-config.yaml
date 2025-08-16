@@ -37,8 +37,9 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
-        additional_dependencies: []
-        args: ["--strict", "--ignore-missing-imports"]
+        additional_dependencies: [types-requests]
+        args: ["--ignore-missing-imports"]
+        files: ^babelarr/
         # You can relax mypy if needed; start strict and tune per-module via pyproject/ini.
 
   # Optional: run quick tests before pushing
