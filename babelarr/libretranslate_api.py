@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import requests
@@ -10,13 +11,26 @@ import requests
 class LibreTranslateAPI:
     """HTTP helper for a single LibreTranslate endpoint.
 
-    The client maintains a single :class:`requests.Session` shared across all
+    The client maintains a *per-thread* :class:`requests.Session` for all
     requests to ``base_url``.
     """
 
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
-        self.session = requests.Session()
+        self._local = threading.local()
+
+    def _get_session(self) -> requests.Session:
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            self._local.session = session
+        return session
+
+    @property
+    def session(self) -> requests.Session:
+        """Return the thread-local :class:`requests.Session`."""
+
+        return self._get_session()
 
     def fetch_languages(self) -> list[dict]:
         """Return the languages supported by the server."""
@@ -45,11 +59,13 @@ class LibreTranslateAPI:
             return self.session.post(url, files=files, data=data, timeout=60)
 
     def download(self, url: str) -> requests.Response:
-        """Download *url* using the shared session."""
+        """Download *url* using the thread-local session."""
 
         return self.session.get(url, timeout=60)
 
     async def close(self) -> None:
-        """Asynchronously close the underlying session."""
+        """Asynchronously close the thread-local session for this thread."""
 
-        self.session.close()
+        session = getattr(self._local, "session", None)
+        if session:
+            session.close()
