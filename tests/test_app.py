@@ -133,6 +133,27 @@ def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
     assert app_instance.db.all() == []
 
 
+def test_worker_logs_processing_time(tmp_path, caplog, app):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    app_instance = app()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+
+        with caplog.at_level(logging.DEBUG):
+            app_instance.enqueue(src)
+            app_instance.tasks.join()
+            app_instance.shutdown_event.set()
+
+    assert any(
+        rec.levelno == logging.DEBUG
+        and rec.message.startswith(f"Finished processing {src} [nl] in ")
+        for rec in caplog.records
+    )
+
+
 def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
     cfg = Config(
         root_dirs=[str(tmp_path / "missing")],
