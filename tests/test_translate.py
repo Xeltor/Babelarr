@@ -176,9 +176,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
     def fake_post(self, url, *, files=None, data=None, timeout=60):
         resp = requests.Response()
         resp.status_code = 200
-        resp._content = (
-            b'{"translatedFileUrl": "http://example/translated.srt"}'
-        )
+        resp._content = b'{"translatedFileUrl": "http://example/translated.srt"}'
         return resp
 
     downloaded = {"url": None}
