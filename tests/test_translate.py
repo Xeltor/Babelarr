@@ -1,9 +1,23 @@
 import logging
+import time
 
 import pytest
 import requests
 
 from babelarr.translator import LibreTranslateClient
+
+
+@pytest.fixture(autouse=True)
+def mock_languages(monkeypatch):
+    def fake_get(self, url, *, timeout=60):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = (
+            b'[{"code": "en", "name": "English", "targets": ["en", "nl"]}]'
+        )
+        return resp
+
+    monkeypatch.setattr(requests.Session, "get", fake_get)
 
 
 class DummyTranslator:
@@ -153,7 +167,14 @@ def test_src_lang_included(monkeypatch, tmp_path):
         resp._content = b"ok"
         return resp
 
+    def fake_get(self, url, *, timeout=60):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "xx", "targets": ["nl"]}]'
+        return resp
+
     monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests.Session, "get", fake_get)
 
     translator = LibreTranslateClient(
         "http://example",
@@ -167,3 +188,74 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     assert result == b"ok"
     assert captured["data"]["source"] == "xx"
+
+
+def test_unsupported_source_language(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    def fake_get(self, url, *, timeout=60):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "en", "targets": ["en", "nl"]}]'
+        return resp
+
+    def fail_post(*args, **kwargs):
+        raise AssertionError("post should not be called")
+
+    monkeypatch.setattr(requests.Session, "get", fake_get)
+    monkeypatch.setattr(requests.Session, "post", fail_post)
+
+    translator = LibreTranslateClient(
+        "http://example", "xx", retry_count=1, backoff_delay=0
+    )
+    with pytest.raises(ValueError, match="Unsupported source language"):
+        translator.translate(tmp_file, "nl")
+    translator.close()
+
+
+def test_unsupported_target_language(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    def fake_get(self, url, *, timeout=60):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "en", "targets": ["en"]}]'
+        return resp
+
+    def fail_post(*args, **kwargs):
+        raise AssertionError("post should not be called")
+
+    monkeypatch.setattr(requests.Session, "get", fake_get)
+    monkeypatch.setattr(requests.Session, "post", fail_post)
+
+    translator = LibreTranslateClient(
+        "http://example", "en", retry_count=1, backoff_delay=0
+    )
+    with pytest.raises(ValueError, match="Unsupported target language"):
+        translator.translate(tmp_file, "nl")
+    translator.close()
+
+
+def test_waits_for_languages(monkeypatch):
+    attempts = {"count": 0}
+
+    def failing_then_success(self, url, *, timeout=60):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise requests.ConnectionError("boom")
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "en", "targets": ["nl"]}]'
+        return resp
+
+    monkeypatch.setattr(requests.Session, "get", failing_then_success)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+
+    translator = LibreTranslateClient(
+        "http://example", "en", retry_count=1, backoff_delay=0
+    )
+    translator.close()
+
+    assert attempts["count"] == 3

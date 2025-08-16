@@ -44,14 +44,44 @@ class LibreTranslateClient:
         backoff_delay: float = 1.0,
         api_key: str | None = None,
     ) -> None:
-        self.api_url = api_url.rstrip("/") + "/translate_file"
+        base_url = api_url.rstrip("/")
+        self.translate_url = base_url + "/translate_file"
+        self.languages_url = base_url + "/languages"
         self.src_lang = src_lang
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
         self.api_key = api_key
         self.session = requests.Session()
+        self._supported: dict[str, set[str]] | None = None
+        # Block until the languages endpoint is reachable so we don't start
+        # working until LibreTranslate is available.
+        self._ensure_supported()
+
+    def _ensure_supported(self) -> dict[str, set[str]]:
+        while self._supported is None:
+            try:
+                resp = self.session.get(self.languages_url, timeout=60)
+                resp.raise_for_status()
+                data = resp.json()
+                self._supported = {
+                    item["code"]: set(item.get("targets", [])) for item in data
+                }
+            except requests.RequestException as exc:
+                logger.warning(
+                    "LibreTranslate unavailable: %s. Waiting %s seconds", exc, self.backoff_delay
+                )
+                time.sleep(self.backoff_delay)
+        return self._supported
 
     def translate(self, path: Path, lang: str) -> bytes:
+        supported = self._ensure_supported()
+        if self.src_lang not in supported:
+            raise ValueError(f"Unsupported source language: {self.src_lang}")
+        if lang not in supported[self.src_lang]:
+            raise ValueError(
+                f"Unsupported target language: {lang} for source {self.src_lang}"
+            )
+
         attempt = 0
         while True:
             attempt += 1
@@ -62,7 +92,7 @@ class LibreTranslateClient:
                     if self.api_key:
                         data["api_key"] = self.api_key
                     resp = self.session.post(
-                        self.api_url, files=files, data=data, timeout=60
+                        self.translate_url, files=files, data=data, timeout=60
                     )
                 if resp.status_code != 200:
                     message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
