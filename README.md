@@ -2,7 +2,7 @@
 
 A lightweight subtitle translator that watches directories for `.en.srt` files and uses [LibreTranslate](https://libretranslate.com/) to generate translations such as Dutch and Bosnian. Files are discovered through a watchdog and periodic scans, queued, and translated sequentially.
 
-## Usage
+## Usage and Installation
 
 Build the container:
 
@@ -30,8 +30,7 @@ The application scans for new `.en.srt` files on startup, upon file creation and
 
 Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
 
-Queued translation tasks are stored in a small SQLite database (`/config/queue.db` by default) so that pending work survives
-container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
+Queued translation tasks are stored in a small SQLite database (`/config/queue.db` by default) so that pending work survives container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
 
 The container runs as a non-root user with UID and GID `1000`. Ensure the host paths mounted at `/data` and `/config` are writable by this user.
 
@@ -41,8 +40,34 @@ The container runs as a non-root user with UID and GID `1000`. Ensure the host p
 
 `DEBOUNCE_SECONDS` configures the delay used to verify that a file has finished writing before it is queued. Increase this value if subtitle files are large or written slowly.
 
+Example `docker-compose.yml`:
 
-## Testing
+```yaml
+version: "3.8"
+
+services:
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./libretranslate-data:/data
+
+  babelarr:
+    build: .
+    depends_on:
+      - libretranslate
+    volumes:
+      - ./subtitles:/data
+      - ./config:/config
+    environment:
+      WATCH_DIRS: "/data"
+      TARGET_LANGS: "nl,bs"
+      LIBRETRANSLATE_URL: "http://libretranslate:5000"
+```
+
+## Development
 
 Run the test suite with [pytest](https://docs.pytest.org/):
 
@@ -50,10 +75,7 @@ Run the test suite with [pytest](https://docs.pytest.org/):
 pytest
 ```
 
-## Development
-
-This project uses [pre-commit](https://pre-commit.com/) to lint and type-check
-the codebase.
+This project uses [pre-commit](https://pre-commit.com/) to lint and type-check the codebase.
 
 Install the hooks:
 
