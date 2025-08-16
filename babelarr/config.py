@@ -13,7 +13,8 @@ class Config:
     Attributes:
         root_dirs: Directories to watch for subtitle files.
         target_langs: Languages to translate into.
-        src_ext: Source subtitle file extension.
+        src_lang: Source subtitle language.
+        src_ext: Source subtitle file extension derived from src_lang.
         api_url: Base URL of the translation API.
         workers: Number of translation worker threads.
         queue_db: Path to the SQLite queue database.
@@ -24,6 +25,7 @@ class Config:
 
     root_dirs: list[str]
     target_langs: list[str]
+    src_lang: str
     src_ext: str
     api_url: str
     workers: int
@@ -58,7 +60,11 @@ class Config:
             target_langs.append(normalized)
             seen.add(normalized)
 
-        src_ext = os.environ.get("SRC_EXT", ".en.srt")
+        src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
+        if not src_lang.isalpha():
+            logger.warning("Invalid SRC_LANG '%s'; defaulting to 'en'", src_lang)
+            src_lang = "en"
+        src_ext = f".{src_lang}.srt"
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
         MAX_WORKERS = 10
@@ -71,7 +77,7 @@ class Config:
                 MAX_WORKERS,
             )
 
-        queue_db = os.environ.get("QUEUE_DB", "/config/queue.db")
+        queue_db = "/config/queue.db"
         Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
 
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
@@ -79,11 +85,11 @@ class Config:
         debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
 
         logger.debug(
-            "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_EXT=%s API_URL=%s "
+            "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
             "WORKERS=%s QUEUE_DB=%s RETRY_COUNT=%s BACKOFF_DELAY=%s DEBOUNCE=%s",
             root_dirs,
             target_langs,
-            src_ext,
+            src_lang,
             api_url,
             workers,
             queue_db,
@@ -95,6 +101,7 @@ class Config:
         return cls(
             root_dirs=root_dirs,
             target_langs=target_langs,
+            src_lang=src_lang,
             src_ext=src_ext,
             api_url=api_url,
             workers=workers,
