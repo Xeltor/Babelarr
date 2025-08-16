@@ -2,7 +2,7 @@ import logging
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import schedule
@@ -120,13 +120,31 @@ class Application:
             logger.debug("Worker picked up %s", path)
             try:
                 if path.exists():
-                    for lang in self.config.target_langs:
-                        out = self.output_path(path, lang)
-                        if not out.exists():
-                            logger.info("Translating %s to %s", path, lang)
-                            self.translate_file(path, lang)
-                        else:
-                            logger.debug("Translation already exists: %s", out)
+                    with ThreadPoolExecutor(
+                        max_workers=len(self.config.target_langs)
+                    ) as executor:
+                        futures = {}
+                        for lang in self.config.target_langs:
+                            out = self.output_path(path, lang)
+                            if not out.exists():
+                                logger.info("Translating %s to %s", path, lang)
+                                futures[
+                                    executor.submit(self.translate_file, path, lang)
+                                ] = lang
+                            else:
+                                logger.debug("Translation already exists: %s", out)
+                        for future in as_completed(futures):
+                            lang = futures[future]
+                            try:
+                                future.result()
+                            except Exception as exc:
+                                logger.error(
+                                    "translation failed for %s to %s: %s",
+                                    path,
+                                    lang,
+                                    exc,
+                                )
+                                logger.debug("Traceback:", exc_info=True)
                 else:
                     logger.warning("missing %s, skipping", path)
             except Exception as exc:
