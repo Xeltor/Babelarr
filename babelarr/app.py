@@ -59,7 +59,7 @@ class SrtHandler(FileSystemEventHandler):
             path = Path(event.src_path)
             logger.debug("Detected modified file %s", path)
             for lang in self.app.config.target_langs:
-                out = path.with_suffix(f".{lang}.srt")
+                out = self.app.output_path(path, lang)
                 if out.exists():
                     out.unlink()
             self._handle(path)
@@ -79,10 +79,14 @@ class Application:
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
 
+    def output_path(self, src: Path, lang: str) -> Path:
+        stem = src.name.removesuffix(self.config.src_ext)
+        return src.with_name(f"{stem}.{lang}.srt")
+
     def translate_file(self, src: Path, lang: str) -> None:
         logger.debug("Translating %s to %s", src, lang)
         content = self.translator.translate(src, lang)
-        output = src.with_suffix(f".{lang}.srt")
+        output = self.output_path(src, lang)
         output.write_bytes(content)
         logger.info("[%s] saved -> %s", lang, output)
 
@@ -96,7 +100,7 @@ class Application:
             try:
                 if path.exists():
                     for lang in self.config.target_langs:
-                        out = path.with_suffix(f".{lang}.srt")
+                        out = self.output_path(path, lang)
                         if not out.exists():
                             logger.info("Translating %s to %s", path, lang)
                             self.translate_file(path, lang)
@@ -114,7 +118,7 @@ class Application:
 
     def needs_translation(self, path: Path) -> bool:
         for lang in self.config.target_langs:
-            out = path.with_suffix(f".{lang}.srt")
+            out = self.output_path(path, lang)
             if not out.exists():
                 return True
         return False

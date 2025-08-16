@@ -29,11 +29,10 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
 def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
-    (tmp_path / "sample.en.nl.srt").write_text("old")
+    app_instance = app()
+    app_instance.output_path(path, "nl").write_text("old")
 
     called = {}
-
-    app_instance = app()
 
     def fake_enqueue(p):
         called["path"] = p
@@ -45,7 +44,7 @@ def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
     handler.on_modified(event)
 
     assert called["path"] == path
-    assert not (tmp_path / "sample.en.nl.srt").exists()
+    assert not app_instance.output_path(path, "nl").exists()
 
 
 def test_srt_handler_enqueue_moved(monkeypatch, tmp_path, app):

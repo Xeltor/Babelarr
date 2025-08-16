@@ -9,7 +9,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
     app_instance = app(cfg=config)
 
     def fake_translate_file(src, lang):
-        src.with_suffix(f".{lang}.srt").write_text("Hallo")
+        app_instance.output_path(src, lang).write_text("Hallo")
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
@@ -19,7 +19,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
         app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
-    assert sub_file.with_suffix(".nl.srt").read_text() == "Hallo"
+    assert app_instance.output_path(sub_file, "nl").read_text() == "Hallo"
     rows = app_instance.db.all()
     assert rows == []
 
@@ -32,7 +32,7 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
     app_instance = app(cfg=config)
 
     def fake_translate_file(src, lang):
-        src.with_suffix(f".{lang}.srt").write_text("Hallo")
+        app_instance.output_path(src, lang).write_text("Hallo")
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
@@ -42,7 +42,7 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
         app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
-    assert sub_file.with_suffix(".nl.srt").read_text() == "Hallo"
+    assert app_instance.output_path(sub_file, "nl").read_text() == "Hallo"
     rows = app_instance.db.all()
     assert rows == []
 
@@ -50,9 +50,9 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
 def test_enqueue_skips_when_translated(tmp_path, app, config):
     sub_file = tmp_path / "video.en.srt"
     sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
-    sub_file.with_suffix(".nl.srt").write_text("Hallo")
 
     app_instance = app(cfg=config)
+    app_instance.output_path(sub_file, "nl").write_text("Hallo")
 
     app_instance.enqueue(sub_file)
 

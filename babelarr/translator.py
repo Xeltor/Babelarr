@@ -94,6 +94,30 @@ class LibreTranslateClient:
                         finally:
                             tmp.close()
                     resp.raise_for_status()
+
+                download_url: str | None = None
+                try:
+                    data = resp.json()
+                    download_url = data.get("translatedFileUrl")
+                except ValueError:
+                    pass
+
+                if download_url:
+                    download = self.session.get(download_url, timeout=60)
+                    if download.status_code != 200:
+                        message = ERROR_MESSAGES.get(
+                            download.status_code, "Unexpected error"
+                        )
+                        logger.error(
+                            "HTTP %s from LibreTranslate download: %s",
+                            download.status_code,
+                            message,
+                        )
+                        logger.error("Headers: %s", download.headers)
+                        logger.error("Body: %s", download.text)
+                        download.raise_for_status()
+                    return download.content
+
                 return resp.content
             except requests.RequestException as exc:
                 if attempt >= self.retry_count:

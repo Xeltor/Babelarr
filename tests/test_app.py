@@ -67,7 +67,7 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
         app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
-    assert src.with_suffix(".nl.srt").exists()
+    assert app_instance.output_path(src, "nl").exists()
 
 
 def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
