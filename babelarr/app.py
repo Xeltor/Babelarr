@@ -20,12 +20,15 @@ class SrtHandler(FileSystemEventHandler):
     def __init__(self, app: "Application"):
         self.app = app
         self._debounce = self.app.config.debounce
+        self._max_wait = 30
 
     def _wait_for_complete(self, path: Path) -> bool:
         """Wait until *path* appears stable before enqueueing.
 
-        Returns ``False`` if the file disappears while waiting.
+        Returns ``False`` if the file disappears while waiting or the timeout
+        is exceeded.
         """
+        start = time.monotonic()
         while True:
             try:
                 size = path.stat().st_size
@@ -38,6 +41,9 @@ class SrtHandler(FileSystemEventHandler):
                 return False
             if new_size == size:
                 return True
+            if time.monotonic() - start > self._max_wait:
+                logger.warning("Timeout waiting for %s to stabilize", path)
+                return False
 
     def _handle(self, path: Path) -> None:
         if self._wait_for_complete(path):
