@@ -62,7 +62,7 @@ class LibreTranslateClient:
     def is_available(self) -> bool:
         """Return ``True`` if the service responds without error."""
         try:
-            resp = self.api.session.head(self.api.base_url, timeout=5)
+            resp = self.api.session.head(self.api.base_url, timeout=900)
             return resp.status_code < 400
         except requests.RequestException:
             return False
