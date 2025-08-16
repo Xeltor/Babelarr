@@ -55,9 +55,6 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command")
 
     queue_parser = sub.add_parser("queue", help="Inspect the processing queue")
-    queue_parser.add_argument(
-        "--status", action="store_true", help="Show pending item count"
-    )
     queue_parser.add_argument("--list", action="store_true", help="List queued paths")
 
     args = parser.parse_args(argv)
@@ -69,8 +66,6 @@ def main(argv: list[str] | None = None) -> None:
     logging.getLogger("watchdog").setLevel(logging.INFO)
 
     if args.command == "queue":
-        if not args.status:
-            parser.error("queue command requires --status")
         config = Config.from_env()
         repo = QueueRepository(config.queue_db)
         count = repo.count()
