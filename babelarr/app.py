@@ -50,19 +50,25 @@ class SrtHandler(FileSystemEventHandler):
             self.app.enqueue(path)
 
     def on_created(self, event):
-        if not event.is_directory:
-            logger.debug("Detected new file %s", event.src_path)
-            self._handle(Path(event.src_path))
+        if event.is_directory or not event.src_path.lower().endswith(
+            self.app.config.src_ext.lower()
+        ):
+            return
+        logger.debug("Detected new file %s", event.src_path)
+        self._handle(Path(event.src_path))
 
     def on_modified(self, event):
-        if not event.is_directory:
-            path = Path(event.src_path)
-            logger.debug("Detected modified file %s", path)
-            for lang in self.app.config.target_langs:
-                out = self.app.output_path(path, lang)
-                if out.exists():
-                    out.unlink()
-            self._handle(path)
+        if event.is_directory or not event.src_path.lower().endswith(
+            self.app.config.src_ext.lower()
+        ):
+            return
+        path = Path(event.src_path)
+        logger.debug("Detected modified file %s", path)
+        for lang in self.app.config.target_langs:
+            out = self.app.output_path(path, lang)
+            if out.exists():
+                out.unlink()
+        self._handle(path)
 
     def on_moved(self, event):
         if not event.is_directory:
