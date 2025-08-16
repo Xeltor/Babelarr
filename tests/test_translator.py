@@ -13,7 +13,8 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     sessions: dict[int, requests.Session] = {}
     lock = threading.Lock()
 
-    def fake_post(self, url, *, files=None, data=None, timeout=60):
+    def fake_post(self, url, *, files=None, data=None, timeout=900):
+        assert timeout == 900
         with lock:
             sessions[id(threading.current_thread())] = self
         resp = requests.Response()

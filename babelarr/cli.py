@@ -41,7 +41,7 @@ def validate_environment(config: Config) -> None:
     config.root_dirs = valid_dirs
 
     try:
-        resp = requests.head(config.api_url, timeout=5)
+        resp = requests.head(config.api_url, timeout=900)
         if resp.status_code >= 400:
             raise requests.RequestException(f"HTTP {resp.status_code}")
     except requests.RequestException as exc:

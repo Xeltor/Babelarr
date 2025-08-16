@@ -36,7 +36,7 @@ class LibreTranslateAPI:
         """Return the languages supported by the server."""
 
         url = self.base_url + "/languages"
-        resp = self.session.get(url, timeout=60)
+        resp = self.session.get(url, timeout=900)
         resp.raise_for_status()
         return resp.json()
 
@@ -61,7 +61,7 @@ class LibreTranslateAPI:
     def download(self, url: str) -> requests.Response:
         """Download *url* using the thread-local session."""
 
-        return self.session.get(url, timeout=60)
+        return self.session.get(url, timeout=900)
 
     async def close(self) -> None:
         """Asynchronously close the thread-local session for this thread."""

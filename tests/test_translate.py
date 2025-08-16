@@ -72,7 +72,8 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
         resp._content = b"ok"
         return resp
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -108,7 +109,8 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
         attempts["count"] += 1
         raise requests.ConnectionError("boom")
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -139,14 +141,16 @@ def test_api_key_included(monkeypatch, tmp_path):
 
     captured: dict[str, dict | None] = {"data": None}
 
-    def fake_post(self, url, *, files=None, data=None, timeout=60):
+    def fake_post(self, url, *, files=None, data=None, timeout=900):
+        assert timeout == 900
         captured["data"] = data
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
         return resp
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -179,14 +183,16 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     captured: dict[str, dict | None] = {"data": None}
 
-    def fake_post(self, url, *, files=None, data=None, timeout=60):
+    def fake_post(self, url, *, files=None, data=None, timeout=900):
+        assert timeout == 900
         captured["data"] = data
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
         return resp
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -216,15 +222,19 @@ def test_download_translated_file(monkeypatch, tmp_path):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    def fake_post(self, url, *, files=None, data=None, timeout=60):
+    def fake_post(self, url, *, files=None, data=None, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'{"translatedFileUrl": "http://example/translated.srt"}'
         return resp
 
     downloaded = {"url": None}
+    calls: list[tuple[str, int]] = []
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
+        calls.append((url, timeout))
         resp = requests.Response()
         if url.endswith("/languages"):
             resp.status_code = 200
@@ -250,10 +260,15 @@ def test_download_translated_file(monkeypatch, tmp_path):
 
     assert downloaded["url"] == "http://example/translated.srt"
     assert result == b"translated"
+    assert calls == [
+        ("http://example/languages", 900),
+        ("http://example/translated.srt", 900),
+    ]
 
 
 def test_unsupported_source_language(monkeypatch):
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en", "nl"]}]'
@@ -269,7 +284,8 @@ def test_unsupported_target_language(monkeypatch, tmp_path):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    def fake_get(self, url, *, timeout=60):
+    def fake_get(self, url, *, timeout=900):
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en"]}]'
