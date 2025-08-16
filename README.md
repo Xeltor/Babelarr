@@ -33,6 +33,7 @@ docker run -d --name babelarr \
 | `TARGET_LANGS` | `nl,bs` | Comma-separated language codes to translate into. |
 | `SRC_LANG` | `en` | Two-letter source language of existing subtitles; files matching `*.LANG.srt` are processed. |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | Base URL of the LibreTranslate instance (no path). |
+| `LIBRETRANSLATE_API_KEY` | *(unset)* | API key for authenticated LibreTranslate instances. |
 | `LOG_LEVEL` | `INFO` | Controls verbosity of console output. |
 | `WORKERS` | `1` | Number of translation worker threads (maximum 10). |
 | `RETRY_COUNT` | `3` | Translation retry attempts. |

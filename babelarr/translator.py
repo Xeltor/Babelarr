@@ -37,11 +37,16 @@ class LibreTranslateClient:
     """Translator implementation using the LibreTranslate API."""
 
     def __init__(
-        self, api_url: str, retry_count: int = 3, backoff_delay: float = 1.0
+        self,
+        api_url: str,
+        retry_count: int = 3,
+        backoff_delay: float = 1.0,
+        api_key: str | None = None,
     ) -> None:
         self.api_url = api_url.rstrip("/") + "/translate_file"
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
+        self.api_key = api_key
         self.session = requests.Session()
 
     def translate(self, path: Path, lang: str) -> bytes:
@@ -52,6 +57,8 @@ class LibreTranslateClient:
                 with open(path, "rb") as fh:
                     files = {"file": fh}
                     data = {"source": "en", "target": lang, "format": "srt"}
+                    if self.api_key:
+                        data["api_key"] = self.api_key
                     resp = self.session.post(
                         self.api_url, files=files, data=data, timeout=60
                     )

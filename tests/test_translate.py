@@ -104,3 +104,29 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
 
     assert attempts["count"] == 2
     assert "failed after 2 attempts" in caplog.text
+
+
+def test_api_key_included(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    captured: dict[str, dict | None] = {"data": None}
+
+    def fake_post(self, url, *, files=None, data=None, timeout=60):
+        captured["data"] = data
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"ok"
+        return resp
+
+    monkeypatch.setattr(requests.Session, "post", fake_post)
+
+    translator = LibreTranslateClient(
+        "http://example", retry_count=1, backoff_delay=0, api_key="secret"
+    )
+
+    result = translator.translate(tmp_file, "nl")
+    translator.close()
+
+    assert result == b"ok"
+    assert captured["data"]["api_key"] == "secret"
