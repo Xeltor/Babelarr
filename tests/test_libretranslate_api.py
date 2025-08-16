@@ -59,10 +59,11 @@ def test_translate_file(monkeypatch, tmp_path):
     tmp_file = tmp_path / "b.srt"
     tmp_file.write_text("dummy")
 
-    calls: list[str] = []
+    calls: list[tuple[str, int]] = []
 
-    def fake_post(self, url, *, files=None, data=None, timeout=60):
-        calls.append(url)
+    def fake_post(self, url, *, files=None, data=None, timeout):
+        calls.append((url, timeout))
+        assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
@@ -73,7 +74,7 @@ def test_translate_file(monkeypatch, tmp_path):
     api = LibreTranslateAPI("http://only")
     resp = api.translate_file(tmp_file, "en", "nl")
 
-    assert calls == ["http://only/translate_file"]
+    assert calls == [("http://only/translate_file", 900)]
     assert resp.content == b"ok"
 
     asyncio.run(api.close())
