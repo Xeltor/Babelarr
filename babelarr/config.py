@@ -95,8 +95,9 @@ class Config:
                 MAX_WORKERS,
             )
 
-        queue_db = "/config/queue.db"
-        Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
+        queue_db_path = Path(os.environ.get("QUEUE_DB", "/config/queue.db"))
+        queue_db_path.parent.mkdir(parents=True, exist_ok=True)
+        queue_db = str(queue_db_path)
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
 

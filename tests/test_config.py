@@ -5,6 +5,11 @@ import pytest
 from babelarr.config import Config
 
 
+@pytest.fixture(autouse=True)
+def temp_queue_db(monkeypatch, tmp_path):
+    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
+
+
 def test_from_env_rejects_empty_target_langs(monkeypatch):
     monkeypatch.setenv("TARGET_LANGS", "")
     with pytest.raises(ValueError):
