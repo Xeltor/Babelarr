@@ -137,6 +137,7 @@ class Application:
             except queue.Empty:
                 continue
             path, lang = task.path, task.lang
+            start_time = time.monotonic()
             logger.debug("Worker picked up %s [%s]", path, lang)
             requeue = False
             success = False
@@ -173,7 +174,13 @@ class Application:
                         self.db.count(),
                     )
                 self.tasks.task_done()
-                logger.debug("Finished processing %s [%s]", path, lang)
+                elapsed = time.monotonic() - start_time
+                logger.debug(
+                    "Finished processing %s [%s] in %.2fs",
+                    path,
+                    lang,
+                    elapsed,
+                )
 
     def needs_translation(self, path: Path, lang: str) -> bool:
         out = self.output_path(path, lang)
