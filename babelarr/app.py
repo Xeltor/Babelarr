@@ -17,10 +17,19 @@ logger = logging.getLogger("babelarr")
 
 
 class SrtHandler(FileSystemEventHandler):
+    _recent: dict[Path, float] = {}
+
     def __init__(self, app: "Application"):
         self.app = app
         self._debounce = self.app.config.debounce
         self._max_wait = 30
+        self._cooldown = self.app.config.cooldown
+
+    def _should_process(self, path: Path) -> bool:
+        last = self._recent.get(path)
+        if last is not None and time.monotonic() - last < self._cooldown:
+            return False
+        return True
 
     def _wait_for_complete(self, path: Path) -> bool:
         """Wait until *path* appears stable before enqueueing.
@@ -48,16 +57,21 @@ class SrtHandler(FileSystemEventHandler):
     def _handle(self, path: Path) -> None:
         if self._wait_for_complete(path):
             self.app.enqueue(path)
+            self._recent[path] = time.monotonic()
 
     def on_created(self, event):
         if not event.is_directory:
             logger.debug("Detected new file %s", event.src_path)
-            self._handle(Path(event.src_path))
+            path = Path(event.src_path)
+            if self._should_process(path):
+                self._handle(path)
 
     def on_modified(self, event):
         if not event.is_directory:
             path = Path(event.src_path)
             logger.debug("Detected modified file %s", path)
+            if not self._should_process(path):
+                return
             for lang in self.app.config.target_langs:
                 out = self.app.output_path(path, lang)
                 if out.exists():
@@ -68,7 +82,8 @@ class SrtHandler(FileSystemEventHandler):
         if not event.is_directory:
             dest = Path(event.dest_path)
             logger.debug("Detected moved file %s -> %s", event.src_path, dest)
-            self._handle(dest)
+            if self._should_process(dest):
+                self._handle(dest)
 
 
 class Application:
@@ -114,6 +129,7 @@ class Application:
             finally:
                 self.db.remove(path)
                 self.tasks.task_done()
+                SrtHandler._recent.pop(path, None)
                 logger.debug("Finished processing %s", path)
 
     def needs_translation(self, path: Path) -> bool:

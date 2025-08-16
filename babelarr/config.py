@@ -22,6 +22,7 @@ class Config:
         retry_count: Translation retry attempts.
         backoff_delay: Initial backoff delay between retries.
         debounce: Seconds to wait for file changes to settle before enqueueing.
+        cooldown: Minimum seconds between handling events for the same file.
     """
 
     root_dirs: list[str]
@@ -35,6 +36,7 @@ class Config:
     retry_count: int = 3
     backoff_delay: float = 1.0
     debounce: float = 0.1
+    cooldown: float = 1.0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -86,11 +88,12 @@ class Config:
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
         backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
         debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
+        cooldown = float(os.environ.get("COOLDOWN_SECONDS", "1"))
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
             "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
-            "BACKOFF_DELAY=%s DEBOUNCE=%s",
+            "BACKOFF_DELAY=%s DEBOUNCE=%s COOLDOWN=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -101,6 +104,7 @@ class Config:
             retry_count,
             backoff_delay,
             debounce,
+            cooldown,
         )
 
         return cls(
@@ -115,4 +119,5 @@ class Config:
             retry_count=retry_count,
             backoff_delay=backoff_delay,
             debounce=debounce,
+            cooldown=cooldown,
         )

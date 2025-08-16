@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileMovedEvent
 
@@ -131,6 +132,33 @@ def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
 
     assert "path" not in called
     assert "timeout" in caplog.text.lower()
+
+
+def test_srt_handler_cooldown(monkeypatch, tmp_path, app):
+    SrtHandler._recent.clear()
+    path = tmp_path / "again.en.srt"
+    path.write_text("data")
+
+    app_instance = app()
+
+    calls: list[Path] = []
+
+    def fake_enqueue(p):
+        calls.append(p)
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+    event = FileModifiedEvent(str(path))
+
+    handler.on_modified(event)
+    handler.on_modified(event)
+    assert calls == [path]
+
+    SrtHandler._recent.pop(path, None)
+
+    handler.on_modified(event)
+    assert calls == [path, path]
 
 
 def test_watch_lifecycle(monkeypatch, tmp_path, app):
