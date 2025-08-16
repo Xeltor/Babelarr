@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import requests
 import schedule
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -97,12 +98,16 @@ class Application:
         logger.info("[%s] saved -> %s", lang, output)
 
     def worker(self):
+        wait = getattr(self.translator, "wait_until_available", None)
         while not self.shutdown_event.is_set():
+            if callable(wait):
+                wait()
             try:
                 path = self.tasks.get(timeout=1)
             except queue.Empty:
                 continue
             logger.debug("Worker picked up %s", path)
+            requeue = False
             try:
                 if path.exists():
                     with ThreadPoolExecutor(
@@ -122,6 +127,15 @@ class Application:
                             lang = futures[future]
                             try:
                                 future.result()
+                            except requests.RequestException as exc:
+                                logger.error(
+                                    "translation failed for %s to %s: %s",
+                                    path,
+                                    lang,
+                                    exc,
+                                )
+                                logger.debug("Traceback:", exc_info=True)
+                                requeue = True
                             except Exception as exc:
                                 logger.error(
                                     "translation failed for %s to %s: %s",
@@ -132,11 +146,19 @@ class Application:
                                 logger.debug("Traceback:", exc_info=True)
                 else:
                     logger.warning("missing %s, skipping", path)
+            except requests.RequestException as exc:
+                logger.error("translation failed for %s: %s", path, exc)
+                logger.debug("Traceback:", exc_info=True)
+                requeue = True
             except Exception as exc:
                 logger.error("translation failed for %s: %s", path, exc)
                 logger.debug("Traceback:", exc_info=True)
             finally:
-                self.db.remove(path)
+                if requeue:
+                    self.tasks.put(path)
+                    logger.info("Requeued %s for later processing", path)
+                else:
+                    self.db.remove(path)
                 self.tasks.task_done()
                 logger.debug("Finished processing %s", path)
 

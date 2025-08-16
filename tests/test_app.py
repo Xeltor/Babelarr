@@ -52,6 +52,9 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
                 raise requests.ConnectionError("boom")
             return b"ok"
 
+        def wait_until_available(self):
+            return None
+
     translator = UnstableTranslator()
     app_instance = app(translator=translator)
 
@@ -63,8 +66,6 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
             app_instance.tasks.join()
             assert any("translation failed" in r.message for r in caplog.records)
 
-        app_instance.enqueue(src)
-        app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
     assert app_instance.output_path(src, "nl").exists()
@@ -89,14 +90,14 @@ def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
         cli.validate_environment(cfg)
 
 
-def test_validate_environment_api_unreachable(config, monkeypatch):
+def test_validate_environment_api_unreachable(config, monkeypatch, caplog):
     def fail(*a, **k):
         raise requests.ConnectionError("boom")
 
     monkeypatch.setattr(cli.requests, "head", fail)
-
-    with pytest.raises(SystemExit):
+    with caplog.at_level(logging.ERROR):
         cli.validate_environment(config)
+        assert "Translation service" in caplog.text
 
 
 def test_configurable_scan_interval(monkeypatch, config, app):

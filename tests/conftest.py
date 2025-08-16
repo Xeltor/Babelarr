@@ -11,6 +11,9 @@ class _DummyTranslator:
     def close(self):
         pass
 
+    def wait_until_available(self):
+        return None
+
 
 @pytest.fixture
 def config(tmp_path):

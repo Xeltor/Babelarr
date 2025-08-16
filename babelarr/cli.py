@@ -17,8 +17,8 @@ def validate_environment(config: Config) -> None:
 
     Updates ``config.root_dirs`` to only include readable directories. If none
     remain, the process exits with a clear error. The translation service is
-    checked with a simple ``HEAD`` request and the process aborts if it is
-    unreachable.
+    probed with a ``HEAD`` request and any failure is logged, but startup
+    continues and workers will wait until the service becomes reachable.
     """
 
     valid_dirs: list[str] = []
@@ -43,8 +43,9 @@ def validate_environment(config: Config) -> None:
         if resp.status_code >= 400:
             raise requests.RequestException(f"HTTP {resp.status_code}")
     except requests.RequestException as exc:
-        logger.error("Translation service %s unreachable: %s", config.api_url, exc)
-        raise SystemExit(f"Translation service unreachable: {config.api_url}")
+        logger.error(
+            "Translation service %s unreachable at startup: %s", config.api_url, exc
+        )
 
 
 def main() -> None:

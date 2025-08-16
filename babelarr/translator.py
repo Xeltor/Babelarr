@@ -35,6 +35,9 @@ class Translator(Protocol):
     def close(self) -> None:
         """Close any open resources."""
 
+    def wait_until_available(self) -> None:  # pragma: no cover - optional
+        """Block until the translation service becomes available."""
+
 
 class LibreTranslateClient:
     """Translator implementation using the LibreTranslate API."""
@@ -53,16 +56,39 @@ class LibreTranslateClient:
         self.api_key = api_key
 
         self.api = LibreTranslateAPI(api_url)
+        self.languages: dict[str, set[str]] | None = None
+        self.supported_targets: set[str] | None = None
 
+    def is_available(self) -> bool:
+        """Return ``True`` if the service responds without error."""
         try:
-            languages = self.api.fetch_languages()
-        except requests.RequestException as exc:
-            logger.error("Failed to fetch languages from LibreTranslate: %s", exc)
-            raise
-        except ValueError as exc:
-            logger.error("Invalid languages response from LibreTranslate: %s", exc)
-            raise
+            resp = self.api.session.head(self.api.base_url, timeout=5)
+            return resp.status_code < 400
+        except requests.RequestException:
+            return False
 
+    def wait_until_available(self) -> None:
+        """Block until the translation service is reachable and languages loaded."""
+        while True:
+            if self.is_available():
+                try:
+                    self.ensure_languages()
+                except requests.RequestException as exc:
+                    logger.warning(
+                        "Failed to fetch languages from LibreTranslate: %s", exc
+                    )
+                else:
+                    return
+            logger.warning(
+                "LibreTranslate unreachable; retrying in %s seconds", self.backoff_delay
+            )
+            time.sleep(self.backoff_delay)
+
+    def ensure_languages(self) -> None:
+        """Fetch and cache supported language mappings."""
+        if self.languages is not None:
+            return
+        languages = self.api.fetch_languages()
         self.languages = {
             lang["code"]: set(lang.get("targets", [])) for lang in languages
         }
@@ -71,7 +97,8 @@ class LibreTranslateClient:
         self.supported_targets = self.languages[self.src_lang]
 
     def translate(self, path: Path, lang: str) -> bytes:
-        if lang not in self.supported_targets:
+        self.ensure_languages()
+        if self.supported_targets is None or lang not in self.supported_targets:
             raise ValueError(f"Unsupported target language: {lang}")
         attempt = 0
         while True:

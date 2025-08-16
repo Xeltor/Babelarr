@@ -15,6 +15,9 @@ class DummyTranslator:
     def close(self):
         pass
 
+    def wait_until_available(self):
+        return None
+
 
 def test_translate_file(tmp_path, app):
     # Create a dummy English subtitle file
@@ -257,9 +260,9 @@ def test_unsupported_source_language(monkeypatch):
         return resp
 
     monkeypatch.setattr(requests.Session, "get", fake_get)
-
+    client = LibreTranslateClient("http://example", "zz")
     with pytest.raises(ValueError, match="Unsupported source language"):
-        LibreTranslateClient("http://example", "zz")
+        client.ensure_languages()
 
 
 def test_unsupported_target_language(monkeypatch, tmp_path):
