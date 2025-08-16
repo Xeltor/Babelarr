@@ -149,6 +149,10 @@ class Application:
         observer = Observer()
         for root in self.config.root_dirs:
             logger.debug("Watching %s", root)
+            root_path = Path(root)
+            if not root_path.exists():
+                logger.warning("Directory %s does not exist; skipping", root_path)
+                continue
             observer.schedule(SrtHandler(self), root, recursive=True)
         observer.start()
         logger.info("Observer started")
