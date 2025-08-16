@@ -92,6 +92,9 @@ class Application:
     def translate_file(self, src: Path, lang: str) -> None:
         logger.debug("Translating %s to %s", src, lang)
         content = self.translator.translate(src, lang)
+        if not src.exists():
+            logger.warning("Source %s disappeared during translation; skipping", src)
+            return
         output = self.output_path(src, lang)
         output.write_bytes(content)
         logger.info("[%s] saved -> %s", lang, output)

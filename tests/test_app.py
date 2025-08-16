@@ -74,6 +74,35 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
     assert app_instance.output_path(src, "nl").exists()
 
 
+def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
+    src = tmp_path / "gone.en.srt"
+    src.write_text("hello")
+
+    class DeletingTranslator:
+        def translate(self, path, lang):
+            path.unlink()
+            return b"ok"
+
+        def wait_until_available(self):
+            return None
+
+    translator = DeletingTranslator()
+    app_instance = app(translator=translator)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+
+        with caplog.at_level(logging.WARNING):
+            app_instance.enqueue(src)
+            app_instance.tasks.join()
+            assert "disappeared" in caplog.text
+
+        app_instance.shutdown_event.set()
+
+    assert not app_instance.output_path(src, "nl").exists()
+    assert app_instance.db.all() == []
+
+
 def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
     cfg = Config(
         root_dirs=[str(tmp_path / "missing")],
