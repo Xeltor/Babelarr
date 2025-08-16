@@ -78,7 +78,15 @@ class Config:
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
         MAX_WORKERS = 10
-        requested = int(os.environ.get("WORKERS", "1"))
+        default_workers = 1
+        raw_workers = os.environ.get("WORKERS", str(default_workers))
+        try:
+            requested = int(raw_workers)
+        except ValueError:
+            logger.warning(
+                "Invalid WORKERS '%s'; defaulting to %s", raw_workers, default_workers
+            )
+            requested = default_workers
         workers = min(requested, MAX_WORKERS)
         if requested > MAX_WORKERS:
             logger.warning(
@@ -87,14 +95,59 @@ class Config:
                 MAX_WORKERS,
             )
 
-        queue_db = "/config/queue.db"
-        Path(queue_db).parent.mkdir(parents=True, exist_ok=True)
+        queue_db_path = Path(os.environ.get("QUEUE_DB", "/config/queue.db"))
+        queue_db_path.parent.mkdir(parents=True, exist_ok=True)
+        queue_db = str(queue_db_path)
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
-        retry_count = int(os.environ.get("RETRY_COUNT", "3"))
-        backoff_delay = float(os.environ.get("BACKOFF_DELAY", "1"))
-        debounce = float(os.environ.get("DEBOUNCE_SECONDS", "0.1"))
-        scan_interval_minutes = int(os.environ.get("SCAN_INTERVAL_MINUTES", "60"))
+
+        default_retry_count = 3
+        raw_retry = os.environ.get("RETRY_COUNT", str(default_retry_count))
+        try:
+            retry_count = int(raw_retry)
+        except ValueError:
+            logger.warning(
+                "Invalid RETRY_COUNT '%s'; defaulting to %s",
+                raw_retry,
+                default_retry_count,
+            )
+            retry_count = default_retry_count
+
+        default_backoff = 1.0
+        raw_backoff = os.environ.get("BACKOFF_DELAY", str(default_backoff))
+        try:
+            backoff_delay = float(raw_backoff)
+        except ValueError:
+            logger.warning(
+                "Invalid BACKOFF_DELAY '%s'; defaulting to %s",
+                raw_backoff,
+                default_backoff,
+            )
+            backoff_delay = default_backoff
+
+        default_debounce = 0.1
+        raw_debounce = os.environ.get("DEBOUNCE_SECONDS", str(default_debounce))
+        try:
+            debounce = float(raw_debounce)
+        except ValueError:
+            logger.warning(
+                "Invalid DEBOUNCE_SECONDS '%s'; defaulting to %s",
+                raw_debounce,
+                default_debounce,
+            )
+            debounce = default_debounce
+
+        default_scan_interval = 60
+        raw_scan = os.environ.get("SCAN_INTERVAL_MINUTES", str(default_scan_interval))
+        try:
+            scan_interval_minutes = int(raw_scan)
+        except ValueError:
+            logger.warning(
+                "Invalid SCAN_INTERVAL_MINUTES '%s'; defaulting to %s",
+                raw_scan,
+                default_scan_interval,
+            )
+            scan_interval_minutes = default_scan_interval
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
