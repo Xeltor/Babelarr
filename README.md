@@ -48,7 +48,7 @@ Queued translation tasks are stored in a small SQLite database (`/config/queue.d
 Check the current queue with:
 
 ```bash
-babelarr queue --status [--list]
+babelarr queue [--list]
 ```
 
 The command prints the number of pending items and, with `--list`, each queued path.
