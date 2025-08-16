@@ -25,7 +25,7 @@ def test_translate_file(tmp_path, app):
     app_instance = app(translator=translator)
 
     app_instance.translate_file(tmp_file, "nl")
-    output_file = tmp_file.with_suffix(".nl.srt")
+    output_file = app_instance.output_path(tmp_file, "nl")
     assert output_file.exists()
     assert output_file.read_bytes() == translator.result
 
@@ -167,3 +167,38 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     assert result == b"ok"
     assert captured["data"]["source"] == "xx"
+
+
+def test_download_translated_file(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    def fake_post(self, url, *, files=None, data=None, timeout=60):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = (
+            b'{"translatedFileUrl": "http://example/translated.srt"}'
+        )
+        return resp
+
+    downloaded = {"url": None}
+
+    def fake_get(self, url, *, timeout=60):
+        downloaded["url"] = url
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"translated"
+        return resp
+
+    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests.Session, "get", fake_get)
+
+    translator = LibreTranslateClient(
+        "http://example", "en", retry_count=1, backoff_delay=0
+    )
+
+    result = translator.translate(tmp_file, "nl")
+    translator.close()
+
+    assert downloaded["url"] == "http://example/translated.srt"
+    assert result == b"translated"
