@@ -1,7 +1,11 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 import requests
+
+from babelarr import cli
+from babelarr.config import Config
 
 
 def test_full_scan(tmp_path, monkeypatch, app):
@@ -64,3 +68,32 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
         app_instance.shutdown_event.set()
 
     assert src.with_suffix(".nl.srt").exists()
+
+
+def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
+    cfg = Config(
+        root_dirs=[str(tmp_path / "missing")],
+        target_langs=["nl"],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=str(tmp_path / "queue.db"),
+    )
+
+    monkeypatch.setattr(
+        cli.requests, "head", lambda *a, **k: type("R", (), {"status_code": 200})()
+    )
+
+    with pytest.raises(SystemExit):
+        cli.validate_environment(cfg)
+
+
+def test_validate_environment_api_unreachable(config, monkeypatch):
+    def fail(*a, **k):
+        raise requests.ConnectionError("boom")
+
+    monkeypatch.setattr(cli.requests, "head", fail)
+
+    with pytest.raises(SystemExit):
+        cli.validate_environment(config)
