@@ -24,6 +24,29 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
     assert rows == []
 
 
+def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
+    sub_file = tmp_path / "video.en.SRT"
+    sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
+
+    config.src_ext = ".srt"
+    app_instance = app(cfg=config)
+
+    def fake_translate_file(src, lang):
+        src.with_suffix(f".{lang}.srt").write_text("Hallo")
+
+    monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
+
+    app_instance.enqueue(sub_file)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+        app_instance.tasks.join()
+        app_instance.shutdown_event.set()
+
+    assert sub_file.with_suffix(".nl.srt").read_text() == "Hallo"
+    rows = app_instance.db.all()
+    assert rows == []
+
+
 def test_enqueue_skips_when_translated(tmp_path, app, config):
     sub_file = tmp_path / "video.en.srt"
     sub_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")

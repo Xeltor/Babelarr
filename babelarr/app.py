@@ -121,7 +121,9 @@ class Application:
 
     def enqueue(self, path: Path):
         logger.debug("Attempting to enqueue %s", path)
-        if not str(path).endswith(self.config.src_ext) or not path.is_file():
+        if not path.is_file() or not path.name.lower().endswith(
+            self.config.src_ext.lower()
+        ):
             return
         if not self.needs_translation(path):
             logger.debug("All translations present for %s; skipping", path)
