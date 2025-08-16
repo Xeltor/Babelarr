@@ -30,7 +30,7 @@ docker run -d --name babelarr \
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WATCH_DIRS` | `/data` | Colon-separated directories to scan for subtitles. |
-| `TARGET_LANGS` | `nl,bs` | Comma-separated language codes to translate into. |
+| `TARGET_LANGS` | `nl,bs` | Comma-separated language codes to translate into. Must include at least one valid code; startup fails if none remain after filtering. |
 | `SRC_LANG` | `en` | Two-letter source language of existing subtitles; files matching `*.LANG.srt` are processed. |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | Base URL of the LibreTranslate instance (no path). |
 | `LIBRETRANSLATE_API_KEY` | *(unset)* | API key for authenticated LibreTranslate instances. |
@@ -40,6 +40,8 @@ docker run -d --name babelarr \
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
 | `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
+
+If `TARGET_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup.
 
 `LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
 
