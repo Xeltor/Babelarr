@@ -84,6 +84,7 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
 
     def fake_translate_file(src, lang):
         app_instance.output_path(src, lang).write_text("Hallo")
+        return True
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
@@ -119,10 +120,12 @@ def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
     with ThreadPoolExecutor(max_workers=1) as executor:
         executor.submit(app_instance.worker)
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             app_instance.enqueue(src)
             app_instance.tasks.join()
             assert "disappeared" in caplog.text
+            assert "Skipped" in caplog.text
+            assert "Completed" not in caplog.text
 
         app_instance.shutdown_event.set()
 

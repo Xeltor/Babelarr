@@ -109,15 +109,23 @@ class Application:
         stem = src.name.removesuffix(self.config.src_ext)
         return src.with_name(f"{stem}.{lang}.srt")
 
-    def translate_file(self, src: Path, lang: str) -> None:
+    def translate_file(self, src: Path, lang: str) -> bool:
+        """Translate *src* into *lang*.
+
+        Returns ``True`` if the translated output was written to disk, ``False``
+        if the source file disappeared mid-translation and no output was
+        produced.
+        """
+
         logger.debug("Translating %s to %s", src, lang)
         content = self.translator.translate(src, lang)
         if not src.exists():
             logger.warning("Source %s disappeared during translation; skipping", src)
-            return
+            return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
         logger.info("[%s] saved -> %s", lang, output)
+        return True
 
     def worker(self):
         wait = getattr(self.translator, "wait_until_available", None)
@@ -131,10 +139,11 @@ class Application:
             path, lang = task.path, task.lang
             logger.debug("Worker picked up %s [%s]", path, lang)
             requeue = False
+            success = False
             try:
                 if path.exists():
                     logger.info("Translating %s to %s", path, lang)
-                    self.translate_file(path, lang)
+                    success = self.translate_file(path, lang)
                 else:
                     logger.warning("missing %s, skipping", path)
             except requests.RequestException as exc:
@@ -155,8 +164,10 @@ class Application:
                     )
                 else:
                     self.db.remove(path, lang)
+                    status = "Completed" if success else "Skipped"
                     logger.info(
-                        "Completed %s to %s (queue length: %d)",
+                        "%s %s to %s (queue length: %d)",
+                        status,
                         path,
                         lang,
                         self.db.count(),
