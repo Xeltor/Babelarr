@@ -64,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
     logging.getLogger("watchdog").setLevel(logging.INFO)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     if args.command == "queue":
         config = Config.from_env()
