@@ -1,4 +1,7 @@
 import logging
+import queue
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -131,3 +134,29 @@ def test_configurable_scan_interval(monkeypatch, config, app):
     assert called["interval"] == 5
     assert called["func"].__self__ is instance
     assert called["func"].__func__ is instance.full_scan.__func__
+
+
+def test_worker_wait_called_once(app):
+    calls = {"count": 0}
+
+    class Translator:
+        def wait_until_available(self):
+            calls["count"] += 1
+
+        def translate(self, path, lang):
+            return b""
+
+    instance = app(translator=Translator())
+
+    def fast_get(timeout=1):
+        raise queue.Empty
+
+    instance.tasks.get = fast_get
+
+    thread = threading.Thread(target=instance.worker)
+    thread.start()
+    time.sleep(0.1)
+    instance.shutdown_event.set()
+    thread.join()
+
+    assert calls["count"] == 1

@@ -99,9 +99,9 @@ class Application:
 
     def worker(self):
         wait = getattr(self.translator, "wait_until_available", None)
+        if callable(wait):
+            wait()
         while not self.shutdown_event.is_set():
-            if callable(wait):
-                wait()
             try:
                 path = self.tasks.get(timeout=1)
             except queue.Empty:
