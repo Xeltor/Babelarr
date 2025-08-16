@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from babelarr import cli
+from babelarr.app import TranslationTask
 from babelarr.config import Config
 
 
@@ -38,7 +39,7 @@ def test_db_persistence_across_restarts(tmp_path, app):
     app2 = app()
     app2.load_pending()
     restored = app2.tasks.get_nowait()
-    assert restored == src
+    assert restored == TranslationTask(src, "nl")
 
 
 def test_worker_retry_on_network_failure(tmp_path, caplog, app):

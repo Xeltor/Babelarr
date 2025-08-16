@@ -76,8 +76,8 @@ def main(argv: list[str] | None = None) -> None:
         count = repo.count()
         print(f"{count} pending item{'s' if count != 1 else ''}")
         if args.list:
-            for path in repo.all():
-                print(path)
+            for path, lang in repo.all():
+                print(f"{path} [{lang}]")
         repo.close()
         return
 
