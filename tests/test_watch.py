@@ -1,9 +1,21 @@
 import logging
 
-from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileMovedEvent
+from watchdog.events import (
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+)
 
 import babelarr.app as app_module
 from babelarr.app import SrtHandler
+
+
+def test_srt_handler_patterns(app):
+    app_instance = app()
+    handler = SrtHandler(app_instance)
+    assert handler.patterns == [f"*{app_instance.config.src_ext}"]
+    assert handler.ignore_directories
 
 
 def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
@@ -21,7 +33,7 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
 
     handler = SrtHandler(app_instance)
     event = FileCreatedEvent(str(path))
-    handler.on_created(event)
+    handler.dispatch(event)
 
     assert called["path"] == path
 
@@ -41,7 +53,7 @@ def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
 
     handler = SrtHandler(app_instance)
     event = FileModifiedEvent(str(path))
-    handler.on_modified(event)
+    handler.dispatch(event)
 
     assert called["path"] == path
     assert not app_instance.output_path(path, "nl").exists()
@@ -63,9 +75,25 @@ def test_srt_handler_enqueue_moved(monkeypatch, tmp_path, app):
 
     handler = SrtHandler(app_instance)
     event = FileMovedEvent(str(src), str(dest))
-    handler.on_moved(event)
+    handler.dispatch(event)
 
     assert called["path"] == dest
+
+
+def test_srt_handler_delete_removes_from_queue(tmp_path, app):
+    path = tmp_path / "sample.en.srt"
+    path.write_text("example")
+
+    app_instance = app()
+    app_instance.enqueue(path)
+    assert app_instance.db.all() == [path]
+
+    path.unlink()
+    handler = SrtHandler(app_instance)
+    event = FileDeletedEvent(str(path))
+    handler.dispatch(event)
+
+    assert app_instance.db.all() == []
 
 
 def test_srt_handler_debounce(monkeypatch, tmp_path, app):
@@ -91,9 +119,11 @@ def test_srt_handler_debounce(monkeypatch, tmp_path, app):
         with path.open("a") as fh:
             fh.write("part2")
 
-    threading.Thread(target=append_later).start()
+    t = threading.Thread(target=append_later)
+    t.start()
     event = FileCreatedEvent(str(path))
-    handler.on_created(event)
+    handler.dispatch(event)
+    t.join()
 
     assert called["path"] == path
     assert path.read_text() == "part1part2"
@@ -127,7 +157,7 @@ def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
 
     event = FileCreatedEvent(str(path))
     with caplog.at_level(logging.WARNING):
-        handler.on_created(event)
+        handler.dispatch(event)
 
     assert "path" not in called
     assert "timeout" in caplog.text.lower()
