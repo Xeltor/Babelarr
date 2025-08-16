@@ -40,7 +40,7 @@ def test_main_sets_watchdog_logger_to_info(monkeypatch):
     assert logging.getLogger("watchdog").level == logging.INFO
 
 
-def test_queue_status_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
+def test_queue_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     db_path = tmp_path / "queue.db"
     with QueueRepository(str(db_path)) as repo:
         repo.add(tmp_path / "one", "nl")
@@ -57,10 +57,32 @@ def test_queue_status_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     )
 
     monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda cls: config))
-    cli.main(["queue", "--status", "--list"])
+    cli.main(["queue", "--list"])
     out = capsys.readouterr().out.strip().splitlines()
     assert out[0] == "2 pending items"
     assert set(out[1:]) == {
         f"{tmp_path / 'one'} [nl]",
         f"{tmp_path / 'two'} [nl]",
     }
+
+
+def test_queue_outputs_count(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "queue.db"
+    with QueueRepository(str(db_path)) as repo:
+        repo.add(tmp_path / "one", "nl")
+        repo.add(tmp_path / "two", "nl")
+
+    config = Config(
+        root_dirs=[],
+        target_langs=[],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=str(db_path),
+    )
+
+    monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda cls: config))
+    cli.main(["queue"])
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out == ["2 pending items"]
