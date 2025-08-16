@@ -7,7 +7,7 @@ from pathlib import Path
 
 import requests
 import schedule
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
 
 from .config import Config
@@ -17,11 +17,15 @@ from .translator import Translator
 logger = logging.getLogger("babelarr")
 
 
-class SrtHandler(FileSystemEventHandler):
+class SrtHandler(PatternMatchingEventHandler):
     def __init__(self, app: "Application"):
         self.app = app
         self._debounce = self.app.config.debounce
         self._max_wait = 30
+        super().__init__(
+            patterns=[f"*{self.app.config.src_ext}"],
+            ignore_directories=True,
+        )
 
     def _wait_for_complete(self, path: Path) -> bool:
         """Wait until *path* appears stable before enqueueing.
@@ -51,18 +55,14 @@ class SrtHandler(FileSystemEventHandler):
             self.app.enqueue(path)
 
     def on_created(self, event):
-        if event.is_directory or not event.src_path.lower().endswith(
-            self.app.config.src_ext.lower()
-        ):
-            return
         logger.debug("Detected new file %s", event.src_path)
         self._handle(Path(event.src_path))
 
+    def on_deleted(self, event):
+        logger.debug("Detected deleted file %s", event.src_path)
+        self.app.db.remove(Path(event.src_path))
+
     def on_modified(self, event):
-        if event.is_directory or not event.src_path.lower().endswith(
-            self.app.config.src_ext.lower()
-        ):
-            return
         path = Path(event.src_path)
         logger.debug("Detected modified file %s", path)
         for lang in self.app.config.target_langs:
@@ -72,10 +72,9 @@ class SrtHandler(FileSystemEventHandler):
         self._handle(path)
 
     def on_moved(self, event):
-        if not event.is_directory:
-            dest = Path(event.dest_path)
-            logger.debug("Detected moved file %s -> %s", event.src_path, dest)
-            self._handle(dest)
+        dest = Path(event.dest_path)
+        logger.debug("Detected moved file %s -> %s", event.src_path, dest)
+        self._handle(dest)
 
 
 class Application:

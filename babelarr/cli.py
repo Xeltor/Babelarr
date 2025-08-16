@@ -53,6 +53,7 @@ def main() -> None:
         level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+    logging.getLogger("watchdog").setLevel(logging.INFO)
     config = Config.from_env()
     validate_environment(config)
     translator = LibreTranslateClient(
