@@ -97,3 +97,39 @@ def test_validate_environment_api_unreachable(config, monkeypatch):
 
     with pytest.raises(SystemExit):
         cli.validate_environment(config)
+
+
+def test_validate_environment_unsupported_source_lang(config, monkeypatch):
+    config.src_lang = "xx"
+
+    monkeypatch.setattr(
+        cli.requests, "head", lambda *a, **k: type("R", (), {"status_code": 200})()
+    )
+
+    def fake_get(url, *, timeout):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "en", "targets": ["nl"]}]'
+        return resp
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    with pytest.raises(SystemExit):
+        cli.validate_environment(config)
+
+
+def test_validate_environment_unsupported_target_lang(config, monkeypatch):
+    monkeypatch.setattr(
+        cli.requests, "head", lambda *a, **k: type("R", (), {"status_code": 200})()
+    )
+
+    def fake_get(url, *, timeout):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b'[{"code": "en", "targets": ["en"]}]'
+        return resp
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    with pytest.raises(SystemExit):
+        cli.validate_environment(config)

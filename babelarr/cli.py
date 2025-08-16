@@ -42,9 +42,27 @@ def validate_environment(config: Config) -> None:
         resp = requests.head(config.api_url, timeout=5)
         if resp.status_code >= 400:
             raise requests.RequestException(f"HTTP {resp.status_code}")
+
+        languages_url = config.api_url.rstrip("/") + "/languages"
+        lang_resp = requests.get(languages_url, timeout=5)
+        lang_resp.raise_for_status()
+        data = lang_resp.json()
     except requests.RequestException as exc:
         logger.error("Translation service %s unreachable: %s", config.api_url, exc)
         raise SystemExit(f"Translation service unreachable: {config.api_url}")
+
+    supported = {item["code"]: set(item.get("targets", [])) for item in data}
+    if config.src_lang not in supported:
+        logger.error("Unsupported source language: %s", config.src_lang)
+        raise SystemExit(f"Unsupported source language: {config.src_lang}")
+    unsupported = [t for t in config.target_langs if t not in supported[config.src_lang]]
+    if unsupported:
+        logger.error(
+            "Unsupported target languages for %s: %s", config.src_lang, unsupported
+        )
+        raise SystemExit(
+            "Unsupported target languages: " + ", ".join(sorted(unsupported))
+        )
 
 
 def main() -> None:
