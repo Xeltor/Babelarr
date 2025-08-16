@@ -64,6 +64,12 @@ class Config:
             target_langs.append(normalized)
             seen.add(normalized)
 
+        if not target_langs:
+            logger.error("No valid languages found in TARGET_LANGS")
+            raise ValueError(
+                "TARGET_LANGS must contain at least one valid language code"
+            )
+
         src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
         if not src_lang.isalpha():
             logger.warning("Invalid SRC_LANG '%s'; defaulting to 'en'", src_lang)
