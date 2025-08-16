@@ -50,6 +50,40 @@ def validate_environment(config: Config) -> None:
         )
 
 
+def filter_target_languages(config: Config, translator: LibreTranslateClient) -> None:
+    """Remove unsupported target languages from *config*.
+
+    Fetches supported languages from *translator* and filters ``config.target_langs``
+    accordingly. Logs a warning for any ignored languages. Exits the process if no
+    supported languages remain.
+    """
+
+    try:
+        translator.ensure_languages()
+    except ValueError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(str(exc))
+    except requests.RequestException as exc:  # pragma: no cover - network failure
+        logger.error("Failed to fetch supported languages: %s", exc)
+        return
+
+    supported = translator.supported_targets or set()
+    unsupported = [lang for lang in config.target_langs if lang not in supported]
+    if unsupported:
+        logger.warning(
+            "Ignoring unsupported target language%s: %s",
+            "s" if len(unsupported) > 1 else "",
+            ", ".join(unsupported),
+        )
+        config.target_langs = [
+            lang for lang in config.target_langs if lang in supported
+        ]
+
+    if not config.target_langs:
+        logger.error("No supported target languages configured")
+        raise SystemExit("No supported target languages configured")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="babelarr")
     sub = parser.add_subparsers(dest="command")
@@ -86,6 +120,7 @@ def main(argv: list[str] | None = None) -> None:
         config.backoff_delay,
         api_key=config.api_key,
     )
+    filter_target_languages(config, translator)
     app = Application(config, translator)
 
     def handle_signal(signum, frame):
