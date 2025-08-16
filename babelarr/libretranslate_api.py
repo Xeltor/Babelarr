@@ -56,7 +56,7 @@ class LibreTranslateAPI:
         url = self.base_url + "/translate_file"
         with open(path, "rb") as fh:
             files = {"file": fh}
-            return self.session.post(url, files=files, data=data, timeout=60)
+            return self.session.post(url, files=files, data=data, timeout=900)
 
     def download(self, url: str) -> requests.Response:
         """Download *url* using the thread-local session."""
