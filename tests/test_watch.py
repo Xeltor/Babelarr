@@ -163,3 +163,46 @@ def test_watch_lifecycle(monkeypatch, tmp_path, app):
 
     assert events["start"] and events["stop"] and events["join"]
     assert events["scheduled"] == [(str(tmp_path), True)]
+
+
+def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    missing = tmp_path / "missing"
+
+    cfg = app_module.Config(
+        root_dirs=[str(existing), str(missing)],
+        target_langs=["nl"],
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=str(tmp_path / "queue.db"),
+        retry_count=2,
+        backoff_delay=0,
+    )
+
+    app_instance = app(cfg=cfg)
+    app_instance.shutdown_event.set()
+
+    events = {"scheduled": []}
+
+    class FakeObserver:
+        def schedule(self, handler, path, recursive):
+            events["scheduled"].append(path)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def join(self):
+            pass
+
+    monkeypatch.setattr(app_module, "Observer", FakeObserver)
+
+    with caplog.at_level(logging.WARNING):
+        app_instance.watch()
+
+    assert events["scheduled"] == [str(existing)]
+    assert str(missing) in caplog.text
