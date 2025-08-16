@@ -173,6 +173,7 @@ def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
     cfg = app_module.Config(
         root_dirs=[str(existing), str(missing)],
         target_langs=["nl"],
+        src_lang="en",
         src_ext=".en.srt",
         api_url="http://example",
         workers=1,
