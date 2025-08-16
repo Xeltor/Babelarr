@@ -34,7 +34,15 @@ class QueueRepository:
         # ``check_same_thread=False`` allows the connection to be shared across
         # worker threads.  Access is still serialised via ``self.lock``.
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.execute("CREATE TABLE IF NOT EXISTS queue (path TEXT PRIMARY KEY)")
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS queue (
+                path TEXT,
+                lang TEXT,
+                PRIMARY KEY (path, lang)
+            )
+            """
+        )
         self.conn.commit()
 
     # ------------------------------------------------------------------
@@ -55,36 +63,47 @@ class QueueRepository:
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
-    def add(self, path: Path) -> bool:
-        """Insert ``path`` into the queue if not already present.
+    def add(self, path: Path, lang: str) -> bool:
+        """Insert ``path``/``lang`` into the queue if not already present.
 
-        Returns ``True`` if the path was inserted, ``False`` if it was already
+        Returns ``True`` if the entry was inserted, ``False`` if it was already
         queued.
         """
 
         with self.lock:
             cur = self.conn.execute(
-                "INSERT OR IGNORE INTO queue(path) VALUES (?)", (str(path),)
+                "INSERT OR IGNORE INTO queue(path, lang) VALUES (?, ?)",
+                (str(path), lang),
             )
             self.conn.commit()
             return cur.rowcount > 0
 
-    def remove(self, path: Path) -> None:
-        """Remove ``path`` from the queue."""
+    def remove(self, path: Path, lang: str | None = None) -> None:
+        """Remove entries for ``path``.
+
+        If ``lang`` is provided only that language is removed, otherwise all
+        queued translations for the path are deleted.
+        """
 
         with self.lock:
-            self.conn.execute("DELETE FROM queue WHERE path = ?", (str(path),))
+            if lang is None:
+                self.conn.execute("DELETE FROM queue WHERE path = ?", (str(path),))
+            else:
+                self.conn.execute(
+                    "DELETE FROM queue WHERE path = ? AND lang = ?",
+                    (str(path), lang),
+                )
             self.conn.commit()
 
-    def all(self) -> list[Path]:
-        """Return a list of all queued paths."""
+    def all(self) -> list[tuple[Path, str]]:
+        """Return a list of all queued path/language pairs."""
 
         with self.lock:
-            rows = self.conn.execute("SELECT path FROM queue").fetchall()
-        return [Path(p) for (p,) in rows]
+            rows = self.conn.execute("SELECT path, lang FROM queue").fetchall()
+        return [(Path(p), lang) for (p, lang) in rows]
 
     def count(self) -> int:
-        """Return the number of queued paths."""
+        """Return the number of queued path/language pairs."""
 
         with self.lock:
             row = self.conn.execute("SELECT COUNT(*) FROM queue").fetchone()

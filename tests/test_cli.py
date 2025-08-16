@@ -43,8 +43,8 @@ def test_main_sets_watchdog_logger_to_info(monkeypatch):
 def test_queue_status_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     db_path = tmp_path / "queue.db"
     with QueueRepository(str(db_path)) as repo:
-        repo.add(tmp_path / "one")
-        repo.add(tmp_path / "two")
+        repo.add(tmp_path / "one", "nl")
+        repo.add(tmp_path / "two", "nl")
 
     config = Config(
         root_dirs=[],
@@ -60,4 +60,7 @@ def test_queue_status_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     cli.main(["queue", "--status", "--list"])
     out = capsys.readouterr().out.strip().splitlines()
     assert out[0] == "2 pending items"
-    assert set(out[1:]) == {str(tmp_path / "one"), str(tmp_path / "two")}
+    assert set(out[1:]) == {
+        f"{tmp_path / 'one'} [nl]",
+        f"{tmp_path / 'two'} [nl]",
+    }

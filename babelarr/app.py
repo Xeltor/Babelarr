@@ -2,7 +2,8 @@ import logging
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -15,6 +16,12 @@ from .queue_db import QueueRepository
 from .translator import Translator
 
 logger = logging.getLogger("babelarr")
+
+
+@dataclass(frozen=True)
+class TranslationTask:
+    path: Path
+    lang: str
 
 
 class SrtHandler(PatternMatchingEventHandler):
@@ -81,7 +88,7 @@ class Application:
     def __init__(self, config: Config, translator: Translator):
         self.config = config
         self.translator = translator
-        self.tasks: queue.Queue[Path] = queue.Queue()
+        self.tasks: queue.Queue[TranslationTask] = queue.Queue()
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
 
@@ -105,78 +112,48 @@ class Application:
             wait()
         while not self.shutdown_event.is_set():
             try:
-                path = self.tasks.get(timeout=1)
+                task = self.tasks.get(timeout=1)
             except queue.Empty:
                 continue
-            logger.debug("Worker picked up %s", path)
+            path, lang = task.path, task.lang
+            logger.debug("Worker picked up %s [%s]", path, lang)
             requeue = False
             try:
                 if path.exists():
-                    with ThreadPoolExecutor(
-                        max_workers=len(self.config.target_langs)
-                    ) as executor:
-                        futures = {}
-                        for lang in self.config.target_langs:
-                            out = self.output_path(path, lang)
-                            if not out.exists():
-                                logger.info("Translating %s to %s", path, lang)
-                                futures[
-                                    executor.submit(self.translate_file, path, lang)
-                                ] = lang
-                            else:
-                                logger.debug("Translation already exists: %s", out)
-                        for future in as_completed(futures):
-                            lang = futures[future]
-                            try:
-                                future.result()
-                            except requests.RequestException as exc:
-                                logger.error(
-                                    "translation failed for %s to %s: %s",
-                                    path,
-                                    lang,
-                                    exc,
-                                )
-                                logger.debug("Traceback:", exc_info=True)
-                                requeue = True
-                            except Exception as exc:
-                                logger.error(
-                                    "translation failed for %s to %s: %s",
-                                    path,
-                                    lang,
-                                    exc,
-                                )
-                                logger.debug("Traceback:", exc_info=True)
+                    logger.info("Translating %s to %s", path, lang)
+                    self.translate_file(path, lang)
                 else:
                     logger.warning("missing %s, skipping", path)
             except requests.RequestException as exc:
-                logger.error("translation failed for %s: %s", path, exc)
+                logger.error("translation failed for %s to %s: %s", path, lang, exc)
                 logger.debug("Traceback:", exc_info=True)
                 requeue = True
             except Exception as exc:
-                logger.error("translation failed for %s: %s", path, exc)
+                logger.error("translation failed for %s to %s: %s", path, lang, exc)
                 logger.debug("Traceback:", exc_info=True)
             finally:
                 if requeue:
-                    self.tasks.put(path)
+                    self.tasks.put(task)
                     logger.info(
-                        "Requeued %s for later processing (queue length: %d)",
+                        "Requeued %s to %s for later processing (queue length: %d)",
                         path,
+                        lang,
                         self.db.count(),
                     )
                 else:
-                    self.db.remove(path)
+                    self.db.remove(path, lang)
                     logger.info(
-                        "Completed %s (queue length: %d)", path, self.db.count()
+                        "Completed %s to %s (queue length: %d)",
+                        path,
+                        lang,
+                        self.db.count(),
                     )
                 self.tasks.task_done()
-                logger.debug("Finished processing %s", path)
+                logger.debug("Finished processing %s [%s]", path, lang)
 
-    def needs_translation(self, path: Path) -> bool:
-        for lang in self.config.target_langs:
-            out = self.output_path(path, lang)
-            if not out.exists():
-                return True
-        return False
+    def needs_translation(self, path: Path, lang: str) -> bool:
+        out = self.output_path(path, lang)
+        return not out.exists()
 
     def enqueue(self, path: Path):
         logger.debug("Attempting to enqueue %s", path)
@@ -184,14 +161,26 @@ class Application:
             self.config.src_ext.lower()
         ):
             return
-        if not self.needs_translation(path):
+        queued_any = False
+        for lang in self.config.target_langs:
+            if not self.needs_translation(path, lang):
+                logger.debug(
+                    "Translation already exists: %s", self.output_path(path, lang)
+                )
+                continue
+            if self.db.add(path, lang):
+                queued_any = True
+                self.tasks.put(TranslationTask(path, lang))
+                logger.info(
+                    "queued %s to %s (queue length: %d)",
+                    path,
+                    lang,
+                    self.db.count(),
+                )
+            else:
+                logger.debug("%s to %s already queued", path, lang)
+        if not queued_any:
             logger.debug("All translations present for %s; skipping", path)
-            return
-        if self.db.add(path):
-            self.tasks.put(path)
-            logger.info("queued %s (queue length: %d)", path, self.db.count())
-        else:
-            logger.debug("%s already queued", path)
 
     def full_scan(self):
         logger.info("Performing full scan")
@@ -202,9 +191,10 @@ class Application:
 
     def load_pending(self):
         logger.info("Loading pending tasks")
-        for p in self.db.all():
-            self.tasks.put(p)
-            logger.info("restored %s", p)
+        for path, lang in self.db.all():
+            task = TranslationTask(path, lang)
+            self.tasks.put(task)
+            logger.info("restored %s to %s", path, lang)
 
     def watch(self):
         observer = Observer()
