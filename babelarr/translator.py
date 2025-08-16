@@ -44,14 +44,36 @@ class LibreTranslateClient:
         backoff_delay: float = 1.0,
         api_key: str | None = None,
     ) -> None:
-        self.api_url = api_url.rstrip("/") + "/translate_file"
+        api_root = api_url.rstrip("/")
+        self.api_url = api_root + "/translate_file"
         self.src_lang = src_lang
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
         self.api_key = api_key
         self.session = requests.Session()
 
+        languages_url = api_root + "/languages"
+        try:
+            resp = self.session.get(languages_url, timeout=60)
+            resp.raise_for_status()
+            languages = resp.json()
+        except requests.RequestException as exc:
+            logger.error("Failed to fetch languages from LibreTranslate: %s", exc)
+            raise
+        except ValueError as exc:
+            logger.error("Invalid languages response from LibreTranslate: %s", exc)
+            raise
+
+        self.languages = {
+            lang["code"]: set(lang.get("targets", [])) for lang in languages
+        }
+        if self.src_lang not in self.languages:
+            raise ValueError(f"Unsupported source language: {self.src_lang}")
+        self.supported_targets = self.languages[self.src_lang]
+
     def translate(self, path: Path, lang: str) -> bytes:
+        if lang not in self.supported_targets:
+            raise ValueError(f"Unsupported target language: {lang}")
         attempt = 0
         while True:
             attempt += 1
