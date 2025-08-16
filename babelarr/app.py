@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import schedule
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import Config
@@ -19,56 +19,24 @@ logger = logging.getLogger("babelarr")
 class SrtHandler(FileSystemEventHandler):
     def __init__(self, app: "Application"):
         self.app = app
-        self._debounce = self.app.config.debounce
-        self._max_wait = 30
 
-    def _wait_for_complete(self, path: Path) -> bool:
-        """Wait until *path* appears stable before enqueueing.
-
-        Returns ``False`` if the file disappears while waiting or the timeout
-        is exceeded.
-        """
-        start = time.monotonic()
-        while True:
-            try:
-                size = path.stat().st_size
-            except FileNotFoundError:
-                return False
-            time.sleep(self._debounce)
-            try:
-                new_size = path.stat().st_size
-            except FileNotFoundError:
-                return False
-            if new_size == size:
-                return True
-            if time.monotonic() - start > self._max_wait:
-                logger.warning("Timeout waiting for %s to stabilize", path)
-                return False
-
-    def _handle(self, path: Path) -> None:
-        if self._wait_for_complete(path):
-            self.app.enqueue(path)
-
-    def on_created(self, event):
-        if not event.is_directory:
-            logger.debug("Detected new file %s", event.src_path)
-            self._handle(Path(event.src_path))
-
-    def on_modified(self, event):
-        if not event.is_directory:
-            path = Path(event.src_path)
-            logger.debug("Detected modified file %s", path)
-            for lang in self.app.config.target_langs:
-                out = self.app.output_path(path, lang)
-                if out.exists():
-                    out.unlink()
-            self._handle(path)
+    def on_closed(self, event):
+        if event.is_directory or not isinstance(event, FileClosedEvent):
+            return
+        path = Path(event.src_path)
+        logger.debug("Detected closed file %s", path)
+        for lang in self.app.config.target_langs:
+            out = self.app.output_path(path, lang)
+            if out.exists():
+                out.unlink()
+        self.app.enqueue(path)
 
     def on_moved(self, event):
-        if not event.is_directory:
-            dest = Path(event.dest_path)
-            logger.debug("Detected moved file %s -> %s", event.src_path, dest)
-            self._handle(dest)
+        if event.is_directory:
+            return
+        dest = Path(event.dest_path)
+        logger.debug("Detected moved file %s -> %s", event.src_path, dest)
+        self.app.enqueue(dest)
 
 
 class Application:
