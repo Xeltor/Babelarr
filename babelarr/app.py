@@ -29,6 +29,7 @@ class SrtHandler(PatternMatchingEventHandler):
         self.app = app
         self._debounce = self.app.config.debounce
         self._max_wait = 30
+        self._recent: dict[Path, float] = {}
         super().__init__(
             patterns=[f"*{self.app.config.src_ext}"],
             ignore_directories=True,
@@ -58,7 +59,19 @@ class SrtHandler(PatternMatchingEventHandler):
                 return False
 
     def _handle(self, path: Path) -> None:
+        now = time.monotonic()
+        # prune expired entries
+        for p, ts in list(self._recent.items()):
+            if now - ts > self._debounce:
+                del self._recent[p]
+
+        last = self._recent.get(path)
+        if last and now - last < self._debounce:
+            logger.debug("Skipping %s; handled %.2fs ago", path, now - last)
+            return
+
         if self._wait_for_complete(path):
+            self._recent[path] = now
             self.app.enqueue(path)
 
     def on_created(self, event):

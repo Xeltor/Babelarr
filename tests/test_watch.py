@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from watchdog.events import (
     FileCreatedEvent,
@@ -78,6 +79,29 @@ def test_srt_handler_enqueue_moved(monkeypatch, tmp_path, app):
     handler.dispatch(event)
 
     assert called["path"] == dest
+
+
+def test_srt_handler_rapid_events(monkeypatch, tmp_path, app):
+    path = tmp_path / "fast.en.srt"
+    path.write_text("example")
+
+    calls: list[Path] = []
+
+    app_instance = app()
+
+    def fake_enqueue(p):
+        calls.append(p)
+
+    monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
+
+    handler = SrtHandler(app_instance)
+    monkeypatch.setattr(handler, "_wait_for_complete", lambda p: True)
+
+    event = FileCreatedEvent(str(path))
+    handler.dispatch(event)
+    handler.dispatch(event)
+
+    assert calls == [path]
 
 
 def test_srt_handler_delete_removes_from_queue(tmp_path, app):
