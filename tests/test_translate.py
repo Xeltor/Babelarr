@@ -27,7 +27,7 @@ def test_translate_file(tmp_path, app):
     translator = DummyTranslator()
     app_instance = app(translator=translator)
 
-    app_instance.translate_file(tmp_file, "nl")
+    assert app_instance.translate_file(tmp_file, "nl") is True
     output_file = app_instance.output_path(tmp_file, "nl")
     assert output_file.exists()
     assert output_file.read_bytes() == translator.result

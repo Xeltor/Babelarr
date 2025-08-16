@@ -10,6 +10,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
 
     def fake_translate_file(src, lang):
         app_instance.output_path(src, lang).write_text("Hallo")
+        return True
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
@@ -33,6 +34,7 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
 
     def fake_translate_file(src, lang):
         app_instance.output_path(src, lang).write_text("Hallo")
+        return True
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
 
