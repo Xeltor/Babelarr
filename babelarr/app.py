@@ -129,6 +129,8 @@ class Application:
         return True
 
     def worker(self):
+        name = threading.current_thread().name
+        logger.debug("Worker %s starting", name)
         wait = getattr(self.translator, "wait_until_available", None)
         if callable(wait):
             wait()
@@ -142,17 +144,23 @@ class Application:
                 continue
             path, lang = task.path, task.lang
             start_time = time.monotonic()
-            logger.debug("Worker picked up %s [%s]", path, lang)
+            logger.debug("Worker %s picked up %s [%s]", name, path, lang)
             requeue = False
             success = False
             try:
                 if path.exists():
-                    logger.info("Translating %s to %s", path, lang)
+                    logger.info("Worker %s translating %s to %s", name, path, lang)
                     success = self.translate_file(path, lang)
                 else:
-                    logger.warning("missing %s, skipping", path)
+                    logger.warning("Worker %s missing %s, skipping", name, path)
             except requests.RequestException as exc:
-                logger.error("translation failed for %s to %s: %s", path, lang, exc)
+                logger.error(
+                    "Worker %s translation failed for %s to %s: %s",
+                    name,
+                    path,
+                    lang,
+                    exc,
+                )
                 logger.debug("Traceback:", exc_info=True)
                 requeue = True
                 self.translator_available.clear()
@@ -160,13 +168,20 @@ class Application:
                     wait()
                 self.translator_available.set()
             except Exception as exc:
-                logger.error("translation failed for %s to %s: %s", path, lang, exc)
+                logger.error(
+                    "Worker %s translation failed for %s to %s: %s",
+                    name,
+                    path,
+                    lang,
+                    exc,
+                )
                 logger.debug("Traceback:", exc_info=True)
             finally:
                 if requeue:
                     self.tasks.put(task)
                     logger.info(
-                        "Requeued %s to %s for later processing (queue length: %d)",
+                        "Worker %s requeued %s to %s for later processing (queue length: %d)",
+                        name,
                         path,
                         lang,
                         self.db.count(),
@@ -175,7 +190,8 @@ class Application:
                     self.db.remove(path, lang)
                     status = "Completed" if success else "Skipped"
                     logger.info(
-                        "%s %s to %s (queue length: %d)",
+                        "Worker %s %s %s to %s (queue length: %d)",
+                        name,
                         status,
                         path,
                         lang,
@@ -184,7 +200,8 @@ class Application:
                 self.tasks.task_done()
                 elapsed = time.monotonic() - start_time
                 logger.debug(
-                    "Finished processing %s [%s] in %.2fs",
+                    "Worker %s finished processing %s [%s] in %.2fs",
+                    name,
                     path,
                     lang,
                     elapsed,
@@ -256,7 +273,9 @@ class Application:
 
     def run(self):
         logger.info("Starting %d worker threads", self.config.workers)
-        executor = ThreadPoolExecutor(max_workers=self.config.workers)
+        executor = ThreadPoolExecutor(
+            max_workers=self.config.workers, thread_name_prefix="worker"
+        )
         for _ in range(self.config.workers):
             executor.submit(self.worker)
 

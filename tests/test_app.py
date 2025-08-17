@@ -149,7 +149,27 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and rec.message.startswith(f"Finished processing {src} [nl] in ")
+        and f"finished processing {src} [nl] in" in rec.message.lower()
+        for rec in caplog.records
+    )
+
+
+def test_worker_name_in_logs(tmp_path, caplog, app):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    app_instance = app()
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker") as executor:
+        executor.submit(app_instance.worker)
+
+        with caplog.at_level(logging.INFO):
+            app_instance.enqueue(src)
+            app_instance.tasks.join()
+            app_instance.shutdown_event.set()
+
+    assert any(
+        rec.levelno == logging.INFO and "Worker worker_0 translating" in rec.message
         for rec in caplog.records
     )
 
