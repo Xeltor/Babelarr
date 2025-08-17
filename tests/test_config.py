@@ -82,3 +82,9 @@ def test_invalid_scan_interval_falls_back_to_default(monkeypatch, caplog):
         cfg = Config.from_env()
     assert cfg.scan_interval_minutes == 60
     assert "Invalid SCAN_INTERVAL_MINUTES" in caplog.text
+
+
+def test_persistent_sessions_flag(monkeypatch):
+    monkeypatch.setenv("PERSISTENT_SESSIONS", "true")
+    cfg = Config.from_env()
+    assert cfg.persistent_sessions is True

@@ -50,6 +50,7 @@ class LibreTranslateClient:
         backoff_delay: float = 1.0,
         availability_check_interval: float = 30.0,
         api_key: str | None = None,
+        persistent_session: bool = False,
     ) -> None:
         self.src_lang = src_lang
         self.retry_count = retry_count
@@ -57,7 +58,7 @@ class LibreTranslateClient:
         self.availability_check_interval = availability_check_interval
         self.api_key = api_key
 
-        self.api = LibreTranslateAPI(api_url)
+        self.api = LibreTranslateAPI(api_url, persistent_session=persistent_session)
         self.languages: dict[str, set[str]] | None = None
         self.supported_targets: set[str] | None = None
 
