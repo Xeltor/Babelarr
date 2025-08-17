@@ -2,7 +2,26 @@
 
 A lightweight subtitle translator that watches directories for subtitle files in a configurable source language (default `.en.srt`) and uses [LibreTranslate](https://libretranslate.com/) to generate translations such as Dutch and Bosnian. Files are discovered through a watchdog and periodic scans, queued, and translated sequentially.
 
+## Prerequisites
+
+- Python 3.12 or newer
+
 ## Usage and Installation
+
+### Quick Start (Non-Docker)
+
+Install Babelarr and its dependencies locally and configure the required environment variables:
+
+```bash
+pip install -e .  # or: pip install babelarr
+
+export WATCH_DIRS="/path/to/subtitles"
+export LIBRETRANSLATE_URL="http://localhost:5000"
+
+babelarr
+```
+
+### Docker
 
 Build the container:
 
@@ -42,6 +61,8 @@ docker run -d --name babelarr \
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
 | `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
+| `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
+| `QUEUE_DB` | `/config/queue.db` | Path to the SQLite queue database. |
 
 If `TARGET_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup.
 
@@ -95,23 +116,17 @@ services:
 
 ## Development
 
-Run the test suite with [pytest](https://docs.pytest.org/):
+The provided Makefile wraps common development tasks:
 
 ```bash
-pytest
+make setup  # install dev dependencies and pre-commit hooks
+make lint   # format and lint the codebase
+make test   # run the test suite
+make check  # lint and tests together
 ```
 
-This project uses [pre-commit](https://pre-commit.com/) to lint and type-check the codebase.
+These targets invoke [pre-commit](https://pre-commit.com/) and [pytest](https://docs.pytest.org/) under the hood.
 
-Install the hooks:
+## License
 
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-Run all checks:
-
-```bash
-pre-commit run --all-files
-```
+This project is licensed under the [MIT License](LICENSE).
