@@ -31,6 +31,20 @@ def test_full_scan(tmp_path, monkeypatch, app):
     assert sorted(called) == sorted([first, second])
 
 
+def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
+    first = tmp_path / "one.en.srt"
+    first.write_text("a")
+    second = tmp_path / "two.en.srt"
+    second.write_text("b")
+
+    app_instance = app()
+    monkeypatch.setattr(app_instance, "_ensure_workers", lambda: None)
+    with caplog.at_level(logging.INFO):
+        app_instance.full_scan()
+
+    assert "Full scan complete: 2 files found" in caplog.text
+
+
 def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
     instance = app()
     called: list[str] = []
@@ -353,26 +367,30 @@ def test_worker_wait_called_once(app):
     assert calls["count"] == 1
 
 
-def test_workers_spawn_and_exit(tmp_path, app):
+def test_workers_spawn_and_exit(tmp_path, app, caplog):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
     instance = app()
     assert instance._active_workers == 0
-    instance.enqueue(src)
 
-    for _ in range(100):
-        if instance._active_workers > 0:
-            break
-        time.sleep(0.05)
-    assert instance._active_workers > 0
+    with caplog.at_level(logging.INFO):
+        instance.enqueue(src)
 
-    instance.tasks.join()
-    for _ in range(100):
-        if instance._active_workers == 0:
-            break
-        time.sleep(0.05)
-    assert instance._active_workers == 0
+        for _ in range(100):
+            if instance._active_workers > 0:
+                break
+            time.sleep(0.05)
+        assert instance._active_workers > 0
+
+        instance.tasks.join()
+        for _ in range(100):
+            if instance._active_workers == 0:
+                break
+            time.sleep(0.05)
+        assert instance._active_workers == 0
+
+    assert any("exiting" in rec.message for rec in caplog.records)
 
 
 def test_get_task_returns_task_or_none(tmp_path, app):

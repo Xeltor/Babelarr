@@ -240,6 +240,11 @@ class Application:
             with self._worker_lock:
                 self._active_workers -= 1
                 self._worker_threads.discard(threading.current_thread())
+                logger.info(
+                    "Worker %s exiting (active workers: %d)",
+                    name,
+                    self._active_workers,
+                )
 
     def needs_translation(self, path: Path, lang: str) -> bool:
         out = self.output_path(path, lang)
@@ -296,10 +301,13 @@ class Application:
 
     def full_scan(self):
         logger.info("Performing full scan")
+        total = 0
         for root in self.config.root_dirs:
             logger.debug("Scanning %s", root)
             for file in Path(root).rglob(f"*{self.config.src_ext}"):
+                total += 1
                 self.enqueue(file)
+        logger.info("Full scan complete: %d files found", total)
 
     def load_pending(self):
         logger.info("Loading pending tasks")
