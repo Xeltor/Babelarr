@@ -103,11 +103,19 @@ def test_db_persistence_across_restarts(tmp_path, app):
     src.write_text("hello")
 
     app1 = app()
-    app1.enqueue(src)
+    app1._ensure_workers = lambda: None
+    app1.enqueue(src, priority=5)
 
     app2 = app()
+    app2._ensure_workers = lambda: None
     app2.load_pending()
-    app2.tasks.join()
+    assert app2.tasks.queue[0][0] == 5
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app2.worker)
+        app2.tasks.join()
+        app2.shutdown_event.set()
+
     assert app2.output_path(src, "nl").exists()
 
 

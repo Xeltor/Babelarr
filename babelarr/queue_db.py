@@ -39,10 +39,19 @@ class QueueRepository:
             CREATE TABLE IF NOT EXISTS queue (
                 path TEXT,
                 lang TEXT,
+                priority INTEGER DEFAULT 0,
                 PRIMARY KEY (path, lang)
             )
             """
         )
+        # ``CREATE TABLE IF NOT EXISTS`` will not modify an existing table, so
+        # we need to ensure the ``priority`` column exists for databases created
+        # before this field was added.
+        cols = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(queue)").fetchall()
+        }
+        if "priority" not in cols:
+            self.conn.execute("ALTER TABLE queue ADD COLUMN priority INTEGER DEFAULT 0")
         self.conn.commit()
 
     # ------------------------------------------------------------------
@@ -63,8 +72,8 @@ class QueueRepository:
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
-    def add(self, path: Path, lang: str) -> bool:
-        """Insert ``path``/``lang`` into the queue if not already present.
+    def add(self, path: Path, lang: str, priority: int = 0) -> bool:
+        """Insert ``path``/``lang`` with ``priority`` if not already present.
 
         Returns ``True`` if the entry was inserted, ``False`` if it was already
         queued.
@@ -72,8 +81,8 @@ class QueueRepository:
 
         with self.lock:
             cur = self.conn.execute(
-                "INSERT OR IGNORE INTO queue(path, lang) VALUES (?, ?)",
-                (str(path), lang),
+                "INSERT OR IGNORE INTO queue(path, lang, priority) VALUES (?, ?, ?)",
+                (str(path), lang, priority),
             )
             self.conn.commit()
             return cur.rowcount > 0
@@ -95,12 +104,14 @@ class QueueRepository:
                 )
             self.conn.commit()
 
-    def all(self) -> list[tuple[Path, str]]:
-        """Return a list of all queued path/language pairs."""
+    def all(self) -> list[tuple[Path, str, int]]:
+        """Return a list of all queued path/language/priority tuples."""
 
         with self.lock:
-            rows = self.conn.execute("SELECT path, lang FROM queue").fetchall()
-        return [(Path(p), lang) for (p, lang) in rows]
+            rows = self.conn.execute(
+                "SELECT path, lang, priority FROM queue"
+            ).fetchall()
+        return [(Path(p), lang, int(priority)) for (p, lang, priority) in rows]
 
     def count(self) -> int:
         """Return the number of queued path/language pairs."""
