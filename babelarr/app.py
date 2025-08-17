@@ -127,7 +127,7 @@ class Application:
             return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
-        logger.info("%s[%s] saved -> %s", prefix, lang, output)
+        logger.debug("%s[%s] saved -> %s", prefix, lang, output)
         return True
 
     def worker(self):
@@ -149,9 +149,10 @@ class Application:
             logger.debug("Worker %s picked up %s [%s] id=%s", name, path, lang, task_id)
             requeue = False
             success = False
+            outcome = "failed"
             try:
                 if path.exists():
-                    logger.info(
+                    logger.debug(
                         "Worker %s translating %s to %s id=%s",
                         name,
                         path,
@@ -159,7 +160,9 @@ class Application:
                         task_id,
                     )
                     success = self.translate_file(path, lang, task_id)
+                    outcome = "succeeded" if success else "skipped"
                 else:
+                    outcome = "skipped"
                     logger.warning(
                         "Worker %s missing %s, skipping id=%s",
                         name,
@@ -191,7 +194,9 @@ class Application:
                     exc,
                 )
                 logger.debug("Traceback:", exc_info=True)
+                outcome = "failed"
             finally:
+                elapsed = time.monotonic() - start_time
                 if requeue:
                     self.tasks.put(task)
                     logger.info(
@@ -204,18 +209,15 @@ class Application:
                     )
                 else:
                     self.db.remove(path, lang)
-                    status = "Completed" if success else "Skipped"
                     logger.info(
-                        "Worker %s %s %s to %s id=%s (queue length: %d)",
-                        name,
-                        status,
+                        "translation %s to %s %s in %.2fs (queue length: %d)",
                         path,
                         lang,
-                        task_id,
+                        outcome,
+                        elapsed,
                         self.db.count(),
                     )
                 self.tasks.task_done()
-                elapsed = time.monotonic() - start_time
                 logger.debug(
                     "Worker %s finished processing %s [%s] id=%s in %.2fs",
                     name,
