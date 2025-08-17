@@ -39,11 +39,12 @@ def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
     assert called["path"] == path
 
 
-def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
+def test_srt_handler_ignore_modified(monkeypatch, tmp_path, app):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
     app_instance = app()
-    app_instance.output_path(path, "nl").write_text("old")
+    output = app_instance.output_path(path, "nl")
+    output.write_text("old")
 
     called = {}
 
@@ -56,8 +57,8 @@ def test_srt_handler_enqueue_modified(monkeypatch, tmp_path, app):
     event = FileModifiedEvent(str(path))
     handler.dispatch(event)
 
-    assert called["path"] == path
-    assert not app_instance.output_path(path, "nl").exists()
+    assert "path" not in called
+    assert output.exists() and output.read_text() == "old"
 
 
 def test_srt_handler_enqueue_moved(monkeypatch, tmp_path, app):
