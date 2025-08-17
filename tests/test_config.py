@@ -10,6 +10,34 @@ def temp_queue_db(monkeypatch, tmp_path):
     monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
 
 
+def test_parse_target_languages_filters_and_normalizes(caplog):
+    raw = "nl, , EN, xx1, nl"
+    with caplog.at_level(logging.WARNING, logger="babelarr"):
+        langs = Config._parse_target_languages(raw)
+    assert langs == ["nl", "en"]
+    assert "Empty language code" in caplog.text
+    assert "Invalid language code 'xx1'" in caplog.text
+
+
+def test_parse_target_languages_empty_raises():
+    with pytest.raises(ValueError):
+        Config._parse_target_languages("")
+
+
+def test_parse_workers_caps_and_defaults(caplog):
+    with caplog.at_level(logging.WARNING, logger="babelarr"):
+        workers = Config._parse_workers("20")
+    assert workers == 10
+    assert "capping" in caplog.text
+
+
+def test_parse_scan_interval_invalid(caplog):
+    with caplog.at_level(logging.WARNING, logger="babelarr"):
+        interval = Config._parse_scan_interval("bad")
+    assert interval == 60
+    assert "Invalid SCAN_INTERVAL_MINUTES" in caplog.text
+
+
 def test_from_env_rejects_empty_target_langs(monkeypatch):
     monkeypatch.setenv("TARGET_LANGS", "")
     with pytest.raises(ValueError):
