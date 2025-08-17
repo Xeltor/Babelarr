@@ -83,13 +83,8 @@ class SrtHandler(PatternMatchingEventHandler):
         self.app.db.remove(Path(event.src_path))
 
     def on_modified(self, event):
-        path = Path(event.src_path)
-        logger.debug("Detected modified file %s", path)
-        for lang in self.app.config.target_langs:
-            out = self.app.output_path(path, lang)
-            if out.exists():
-                out.unlink()
-        self._handle(path)
+        """Ignore file modification events."""
+        return
 
     def on_moved(self, event):
         dest = Path(event.dest_path)
