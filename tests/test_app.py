@@ -29,6 +29,25 @@ def test_full_scan(tmp_path, monkeypatch, app):
     assert sorted(called) == sorted([first, second])
 
 
+def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
+    instance = app()
+    called: list[str] = []
+
+    def fake_full_scan():
+        called.append(threading.current_thread().name)
+
+    monkeypatch.setattr(instance, "full_scan", fake_full_scan)
+
+    thread = threading.Thread(target=instance.scan_worker, name="scanner")
+    thread.start()
+    instance.request_scan()
+    instance.scan_queue.join()
+    instance.shutdown_event.set()
+    thread.join()
+
+    assert called == ["scanner"]
+
+
 def test_db_persistence_across_restarts(tmp_path, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
@@ -297,12 +316,13 @@ def test_configurable_scan_interval(monkeypatch, config, app):
 
     monkeypatch.setattr(app_mod.schedule, "every", fake_every)
     monkeypatch.setattr(instance, "watch", lambda: None)
+    monkeypatch.setattr(instance, "scan_worker", lambda: None)
     instance.shutdown_event.set()
     instance.run()
 
     assert called["interval"] == 5
     assert called["func"].__self__ is instance
-    assert called["func"].__func__ is instance.full_scan.__func__
+    assert called["func"].__func__ is instance.request_scan.__func__
 
 
 def test_worker_wait_called_once(app):
