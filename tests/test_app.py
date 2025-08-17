@@ -2,7 +2,6 @@ import logging
 import queue
 import re
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -366,13 +365,18 @@ def test_worker_wait_called_once(app):
     calls = {"count": 0}
 
     class Translator:
+        def __init__(self):
+            self.called = threading.Event()
+
         def wait_until_available(self):
             calls["count"] += 1
+            self.called.set()
 
         def translate(self, path, lang):
             return b""
 
-    instance = app(translator=Translator())
+    translator = Translator()
+    instance = app(translator=translator)
 
     def fast_get(timeout=1):
         raise queue.Empty
@@ -381,9 +385,8 @@ def test_worker_wait_called_once(app):
 
     thread = threading.Thread(target=instance.worker)
     thread.start()
-    time.sleep(0.1)
-    instance.shutdown_event.set()
-    thread.join()
+    assert translator.called.wait(timeout=1)
+    thread.join(timeout=1)
 
     assert calls["count"] == 1
 
@@ -392,21 +395,32 @@ def test_workers_spawn_and_exit(tmp_path, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
-    instance = app()
+    class BlockingTranslator:
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def translate(self, path, lang):
+            self.started.set()
+            self.release.wait()
+            return b""
+
+        def wait_until_available(self):
+            return None
+
+    translator = BlockingTranslator()
+    instance = app(translator=translator)
     assert instance._active_workers == 0
     instance.enqueue(src)
 
-    for _ in range(100):
-        if instance._active_workers > 0:
-            break
-        time.sleep(0.05)
+    assert translator.started.wait(timeout=1)
     assert instance._active_workers > 0
 
+    translator.release.set()
     instance.tasks.join()
-    for _ in range(100):
-        if instance._active_workers == 0:
-            break
-        time.sleep(0.05)
+    for t in list(instance._worker_threads):
+        t.join(timeout=1)
+
     assert instance._active_workers == 0
 
 
