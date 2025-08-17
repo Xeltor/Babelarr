@@ -218,7 +218,7 @@ class Application:
                     logger.info(
                         "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
                         name,
-                        path,
+                        path.name,
                         lang,
                         task_id,
                         self.db.count(),
@@ -227,7 +227,7 @@ class Application:
                     self.db.remove(path, lang)
                     logger.info(
                         "translation %s to %s %s in %.2fs (queue length: %d)",
-                        path,
+                        path.name,
                         lang,
                         outcome,
                         elapsed,
@@ -323,7 +323,7 @@ class Application:
             task = TranslationTask(path, lang, uuid4().hex, priority)
             self.tasks.put((priority, self._task_counter, task))
             self._task_counter += 1
-            logger.info("restored %s to %s id=%s", path, lang, task.task_id)
+            logger.info("restored %s to %s id=%s", path.name, lang, task.task_id)
             self._ensure_workers()
 
     def watch(self):

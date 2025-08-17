@@ -280,7 +280,8 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
     ]
     assert len(info_logs) == 1
     msg = info_logs[0].message
-    assert str(src) in msg
+    assert src.name in msg
+    assert str(src) not in msg
     assert "nl" in msg
     assert "succeeded" in msg
     assert re.search(r"in \d+\.\d+s", msg)
