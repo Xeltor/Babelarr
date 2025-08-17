@@ -99,6 +99,61 @@ class LibreTranslateClient:
             raise ValueError(f"Unsupported source language: {self.src_lang}")
         self.supported_targets = self.languages[self.src_lang]
 
+    def _handle_error_response(self, resp: requests.Response, context: str) -> None:
+        """Log and raise for non-200 *resp* responses."""
+        if resp.status_code == 200:
+            return
+
+        message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
+        try:
+            err_json = resp.json()
+            detail = (
+                err_json.get("error")
+                or err_json.get("message")
+                or err_json.get("detail")
+            )
+            if detail:
+                message = f"{message}: {detail}"
+        except ValueError:
+            pass
+
+        logger.error("HTTP %s from %s: %s", resp.status_code, context, message)
+        logger.error("Headers: %s", resp.headers)
+        logger.error("Body: %s", resp.text)
+        if logger.isEnabledFor(logging.DEBUG):
+            import tempfile
+
+            tmp = tempfile.NamedTemporaryFile(
+                delete=False, prefix="babelarr-", suffix=".err"
+            )
+            try:
+                tmp.write(resp.content)
+                logger.debug("Saved failing response to %s", tmp.name)
+            finally:
+                tmp.close()
+        resp.raise_for_status()
+
+    def _retrieve_download(self, download_url: str) -> bytes:
+        """Fetch translated content from *download_url*."""
+        download = self.api.download(download_url)
+        self._handle_error_response(download, "LibreTranslate download")
+        return download.content
+
+    def _request_translation(self, path: Path, lang: str) -> bytes:
+        """Send translation request and handle optional download flow."""
+        resp = self.api.translate_file(path, self.src_lang, lang, self.api_key)
+        self._handle_error_response(resp, "LibreTranslate")
+
+        try:
+            data = resp.json()
+        except ValueError:
+            return resp.content
+
+        download_url = data.get("translatedFileUrl")
+        if download_url:
+            return self._retrieve_download(download_url)
+        return resp.content
+
     def translate(self, path: Path, lang: str) -> bytes:
         self.ensure_languages()
         if self.supported_targets is None or lang not in self.supported_targets:
@@ -107,62 +162,7 @@ class LibreTranslateClient:
         while True:
             attempt += 1
             try:
-                resp = self.api.translate_file(path, self.src_lang, lang, self.api_key)
-                if resp.status_code != 200:
-                    message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
-                    try:
-                        err_json = resp.json()
-                        detail = (
-                            err_json.get("error")
-                            or err_json.get("message")
-                            or err_json.get("detail")
-                        )
-                        if detail:
-                            message = f"{message}: {detail}"
-                    except ValueError:
-                        pass
-                    logger.error(
-                        "HTTP %s from LibreTranslate: %s", resp.status_code, message
-                    )
-                    logger.error("Headers: %s", resp.headers)
-                    logger.error("Body: %s", resp.text)
-                    if logger.isEnabledFor(logging.DEBUG):
-                        import tempfile
-
-                        tmp = tempfile.NamedTemporaryFile(
-                            delete=False, prefix="babelarr-", suffix=".err"
-                        )
-                        try:
-                            tmp.write(resp.content)
-                            logger.debug("Saved failing response to %s", tmp.name)
-                        finally:
-                            tmp.close()
-                    resp.raise_for_status()
-
-                download_url: str | None = None
-                try:
-                    data = resp.json()
-                    download_url = data.get("translatedFileUrl")
-                except ValueError:
-                    pass
-
-                if download_url:
-                    download = self.api.download(download_url)
-                    if download.status_code != 200:
-                        message = ERROR_MESSAGES.get(
-                            download.status_code, "Unexpected error"
-                        )
-                        logger.error(
-                            "HTTP %s from LibreTranslate download: %s",
-                            download.status_code,
-                            message,
-                        )
-                        logger.error("Headers: %s", download.headers)
-                        logger.error("Body: %s", download.text)
-                        download.raise_for_status()
-                    return download.content
-
-                return resp.content
+                return self._request_translation(path, lang)
             except requests.RequestException as exc:
                 if attempt >= self.retry_count:
                     logger.error(
