@@ -2,6 +2,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -135,6 +136,49 @@ class Application:
         logger.debug("%s[%s] saved -> %s", prefix, lang, output)
         return True
 
+    def _get_task(self) -> TranslationTask | None:
+        try:
+            return self.tasks.get(timeout=0.1)
+        except queue.Empty:
+            return None
+
+    def _process_translation(self, task: TranslationTask, worker_name: str) -> bool:
+        path, lang, task_id = task.path, task.lang, task.task_id
+        if path.exists():
+            logger.debug(
+                "Worker %s translating %s to %s id=%s", worker_name, path, lang, task_id
+            )
+            return self.translate_file(path, lang, task_id)
+        logger.warning(
+            "Worker %s missing %s, skipping id=%s", worker_name, path, task_id
+        )
+        return False
+
+    def _handle_failure(
+        self,
+        task: TranslationTask,
+        exc: Exception,
+        worker_name: str,
+        wait: Callable[[], None] | None,
+    ) -> bool:
+        path, lang, task_id = task.path, task.lang, task.task_id
+        logger.error(
+            "Worker %s translation failed for %s to %s id=%s: %s",
+            worker_name,
+            path,
+            lang,
+            task_id,
+            exc,
+        )
+        logger.debug("Traceback:", exc_info=True)
+        if isinstance(exc, requests.RequestException):
+            self.translator_available.clear()
+            if callable(wait):
+                wait()
+            self.translator_available.set()
+            return True
+        return False
+
     def worker(self):
         name = threading.current_thread().name
         logger.debug("Worker %s starting", name)
@@ -146,94 +190,52 @@ class Application:
             while not self.shutdown_event.is_set():
                 if not self.translator_available.wait(timeout=1):
                     continue
-                try:
-                    task = self.tasks.get(timeout=0.1)
-                except queue.Empty:
+                task = self._get_task()
+                if task is None:
                     break
                 path, lang, task_id = task.path, task.lang, task.task_id
                 start_time = time.monotonic()
                 logger.debug(
                     "Worker %s picked up %s [%s] id=%s", name, path, lang, task_id
                 )
-                requeue = False
-                success = False
-                outcome = "failed"
                 try:
-                    if path.exists():
-                        logger.debug(
-                            "Worker %s translating %s to %s id=%s",
-                            name,
-                            path,
-                            lang,
-                            task_id,
-                        )
-                        success = self.translate_file(path, lang, task_id)
-                        outcome = "succeeded" if success else "skipped"
-                    else:
-                        outcome = "skipped"
-                        logger.warning(
-                            "Worker %s missing %s, skipping id=%s",
-                            name,
-                            path,
-                            task_id,
-                        )
-                except requests.RequestException as exc:
-                    logger.error(
-                        "Worker %s translation failed for %s to %s id=%s: %s",
-                        name,
-                        path,
-                        lang,
-                        task_id,
-                        exc,
-                    )
-                    logger.debug("Traceback:", exc_info=True)
-                    requeue = True
-                    self.translator_available.clear()
-                    if callable(wait):
-                        wait()
-                    self.translator_available.set()
+                    success = self._process_translation(task, name)
+                    requeue = False
+                    outcome = "succeeded" if success else "skipped"
                 except Exception as exc:
-                    logger.error(
-                        "Worker %s translation failed for %s to %s id=%s: %s",
-                        name,
-                        path,
-                        lang,
-                        task_id,
-                        exc,
-                    )
-                    logger.debug("Traceback:", exc_info=True)
+                    requeue = self._handle_failure(task, exc, name, wait)
+                    success = False
                     outcome = "failed"
-                finally:
-                    elapsed = time.monotonic() - start_time
-                    if requeue:
-                        self.tasks.put(task)
-                        logger.info(
-                            "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
-                            name,
-                            path,
-                            lang,
-                            task_id,
-                            self.db.count(),
-                        )
-                    else:
-                        self.db.remove(path, lang)
-                        logger.info(
-                            "translation %s to %s %s in %.2fs (queue length: %d)",
-                            path,
-                            lang,
-                            outcome,
-                            elapsed,
-                            self.db.count(),
-                        )
-                    self.tasks.task_done()
-                    logger.debug(
-                        "Worker %s finished processing %s [%s] id=%s in %.2fs",
+                elapsed = time.monotonic() - start_time
+                if requeue:
+                    self.tasks.put(task)
+                    logger.info(
+                        "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
                         name,
                         path,
                         lang,
                         task_id,
-                        elapsed,
+                        self.db.count(),
                     )
+                else:
+                    self.db.remove(path, lang)
+                    logger.info(
+                        "translation %s to %s %s in %.2fs (queue length: %d)",
+                        path,
+                        lang,
+                        outcome,
+                        elapsed,
+                        self.db.count(),
+                    )
+                self.tasks.task_done()
+                logger.debug(
+                    "Worker %s finished processing %s [%s] id=%s in %.2fs",
+                    name,
+                    path,
+                    lang,
+                    task_id,
+                    elapsed,
+                )
         finally:
             with self._worker_lock:
                 self._active_workers -= 1
