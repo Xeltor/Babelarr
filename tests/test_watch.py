@@ -1,4 +1,5 @@
 import logging
+import threading
 from pathlib import Path
 
 from watchdog.events import (
@@ -109,8 +110,23 @@ def test_srt_handler_delete_removes_from_queue(tmp_path, app):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
 
-    app_instance = app()
+    class SlowTranslator:
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def translate(self, path, lang):
+            self.started.set()
+            self.release.wait()
+            return b""
+
+        def wait_until_available(self):
+            return None
+
+    translator = SlowTranslator()
+    app_instance = app(translator=translator)
     app_instance.enqueue(path)
+    translator.started.wait()
     assert app_instance.db.all() == [(path, "nl")]
 
     path.unlink()
@@ -118,6 +134,8 @@ def test_srt_handler_delete_removes_from_queue(tmp_path, app):
     event = FileDeletedEvent(str(path))
     handler.dispatch(event)
 
+    translator.release.set()
+    app_instance.tasks.join()
     assert app_instance.db.all() == []
 
 

@@ -38,10 +38,8 @@ def test_db_persistence_across_restarts(tmp_path, app):
 
     app2 = app()
     app2.load_pending()
-    restored = app2.tasks.get_nowait()
-    assert restored.path == src
-    assert restored.lang == "nl"
-    assert restored.task_id
+    app2.tasks.join()
+    assert app2.output_path(src, "nl").exists()
 
 
 def test_worker_retry_on_network_failure(tmp_path, caplog, app):
@@ -331,3 +329,25 @@ def test_worker_wait_called_once(app):
     thread.join()
 
     assert calls["count"] == 1
+
+
+def test_workers_spawn_and_exit(tmp_path, app):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    instance = app()
+    assert instance._active_workers == 0
+    instance.enqueue(src)
+
+    for _ in range(100):
+        if instance._active_workers > 0:
+            break
+        time.sleep(0.05)
+    assert instance._active_workers > 0
+
+    instance.tasks.join()
+    for _ in range(100):
+        if instance._active_workers == 0:
+            break
+        time.sleep(0.05)
+    assert instance._active_workers == 0
