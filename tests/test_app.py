@@ -8,7 +8,6 @@ import pytest
 import requests
 
 from babelarr import cli
-from babelarr.app import TranslationTask
 from babelarr.config import Config
 
 
@@ -39,7 +38,9 @@ def test_db_persistence_across_restarts(tmp_path, app):
     app2 = app()
     app2.load_pending()
     restored = app2.tasks.get_nowait()
-    assert restored == TranslationTask(src, "nl")
+    assert restored.path == src
+    assert restored.lang == "nl"
+    assert restored.task_id
 
 
 def test_worker_retry_on_network_failure(tmp_path, caplog, app):
@@ -82,7 +83,7 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
     config.src_ext = ".srt"
     app_instance = app(cfg=config)
 
-    def fake_translate_file(src, lang):
+    def fake_translate_file(src, lang, task_id=None):
         app_instance.output_path(src, lang).write_text("Hallo")
         return True
 
@@ -149,7 +150,9 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and f"finished processing {src} [nl] in" in rec.message.lower()
+        and "finished processing" in rec.message.lower()
+        and str(src) in rec.message
+        and "[nl]" in rec.message
         for rec in caplog.records
     )
 
@@ -169,7 +172,9 @@ def test_worker_name_in_logs(tmp_path, caplog, app):
             app_instance.shutdown_event.set()
 
     assert any(
-        rec.levelno == logging.INFO and "Worker worker_0 translating" in rec.message
+        rec.levelno == logging.INFO
+        and rec.message.startswith("Worker worker_0")
+        and "translating" in rec.message
         for rec in caplog.records
     )
 

@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import requests
 import schedule
@@ -22,6 +23,7 @@ logger = logging.getLogger("babelarr")
 class TranslationTask:
     path: Path
     lang: str
+    task_id: str
 
 
 class SrtHandler(PatternMatchingEventHandler):
@@ -105,7 +107,7 @@ class Application:
         stem = src.name.removesuffix(self.config.src_ext)
         return src.with_name(f"{stem}.{lang}.srt")
 
-    def translate_file(self, src: Path, lang: str) -> bool:
+    def translate_file(self, src: Path, lang: str, task_id: str | None = None) -> bool:
         """Translate *src* into *lang*.
 
         Returns ``True`` if the translated output was written to disk, ``False``
@@ -113,14 +115,19 @@ class Application:
         produced.
         """
 
-        logger.debug("Translating %s to %s", src, lang)
+        prefix = f"[{task_id}] " if task_id else ""
+        logger.debug("%sTranslating %s to %s", prefix, src, lang)
         content = self.translator.translate(src, lang)
         if not src.exists():
-            logger.warning("Source %s disappeared during translation; skipping", src)
+            logger.warning(
+                "%sSource %s disappeared during translation; skipping",
+                prefix,
+                src,
+            )
             return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
-        logger.info("[%s] saved -> %s", lang, output)
+        logger.info("%s[%s] saved -> %s", prefix, lang, output)
         return True
 
     def worker(self):
@@ -137,23 +144,35 @@ class Application:
                 task = self.tasks.get(timeout=1)
             except queue.Empty:
                 continue
-            path, lang = task.path, task.lang
+            path, lang, task_id = task.path, task.lang, task.task_id
             start_time = time.monotonic()
-            logger.debug("Worker %s picked up %s [%s]", name, path, lang)
+            logger.debug("Worker %s picked up %s [%s] id=%s", name, path, lang, task_id)
             requeue = False
             success = False
             try:
                 if path.exists():
-                    logger.info("Worker %s translating %s to %s", name, path, lang)
-                    success = self.translate_file(path, lang)
+                    logger.info(
+                        "Worker %s translating %s to %s id=%s",
+                        name,
+                        path,
+                        lang,
+                        task_id,
+                    )
+                    success = self.translate_file(path, lang, task_id)
                 else:
-                    logger.warning("Worker %s missing %s, skipping", name, path)
+                    logger.warning(
+                        "Worker %s missing %s, skipping id=%s",
+                        name,
+                        path,
+                        task_id,
+                    )
             except requests.RequestException as exc:
                 logger.error(
-                    "Worker %s translation failed for %s to %s: %s",
+                    "Worker %s translation failed for %s to %s id=%s: %s",
                     name,
                     path,
                     lang,
+                    task_id,
                     exc,
                 )
                 logger.debug("Traceback:", exc_info=True)
@@ -164,10 +183,11 @@ class Application:
                 self.translator_available.set()
             except Exception as exc:
                 logger.error(
-                    "Worker %s translation failed for %s to %s: %s",
+                    "Worker %s translation failed for %s to %s id=%s: %s",
                     name,
                     path,
                     lang,
+                    task_id,
                     exc,
                 )
                 logger.debug("Traceback:", exc_info=True)
@@ -175,30 +195,33 @@ class Application:
                 if requeue:
                     self.tasks.put(task)
                     logger.info(
-                        "Worker %s requeued %s to %s for later processing (queue length: %d)",
+                        "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
                         name,
                         path,
                         lang,
+                        task_id,
                         self.db.count(),
                     )
                 else:
                     self.db.remove(path, lang)
                     status = "Completed" if success else "Skipped"
                     logger.info(
-                        "Worker %s %s %s to %s (queue length: %d)",
+                        "Worker %s %s %s to %s id=%s (queue length: %d)",
                         name,
                         status,
                         path,
                         lang,
+                        task_id,
                         self.db.count(),
                     )
                 self.tasks.task_done()
                 elapsed = time.monotonic() - start_time
                 logger.debug(
-                    "Worker %s finished processing %s [%s] in %.2fs",
+                    "Worker %s finished processing %s [%s] id=%s in %.2fs",
                     name,
                     path,
                     lang,
+                    task_id,
                     elapsed,
                 )
 
@@ -221,11 +244,13 @@ class Application:
                 continue
             if self.db.add(path, lang):
                 queued_any = True
-                self.tasks.put(TranslationTask(path, lang))
+                task_id = uuid4().hex
+                self.tasks.put(TranslationTask(path, lang, task_id))
                 logger.info(
-                    "queued %s to %s (queue length: %d)",
+                    "queued %s to %s id=%s (queue length: %d)",
                     path,
                     lang,
+                    task_id,
                     self.db.count(),
                 )
             else:
@@ -243,9 +268,9 @@ class Application:
     def load_pending(self):
         logger.info("Loading pending tasks")
         for path, lang in self.db.all():
-            task = TranslationTask(path, lang)
+            task = TranslationTask(path, lang, uuid4().hex)
             self.tasks.put(task)
-            logger.info("restored %s to %s", path, lang)
+            logger.info("restored %s to %s id=%s", path, lang, task.task_id)
 
     def watch(self):
         observer = Observer()

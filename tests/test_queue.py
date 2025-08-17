@@ -8,7 +8,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
     config.src_ext = ".srt"
     app_instance = app(cfg=config)
 
-    def fake_translate_file(src, lang):
+    def fake_translate_file(src, lang, task_id=None):
         app_instance.output_path(src, lang).write_text("Hallo")
         return True
 
@@ -32,7 +32,7 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
     config.src_ext = ".srt"
     app_instance = app(cfg=config)
 
-    def fake_translate_file(src, lang):
+    def fake_translate_file(src, lang, task_id=None):
         app_instance.output_path(src, lang).write_text("Hallo")
         return True
 
