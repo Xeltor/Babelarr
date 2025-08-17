@@ -19,6 +19,9 @@ Only open/update the PR if **all** steps succeed. Otherwise, fix and re-run `mak
   - `app.py` → Application orchestration, filesystem watcher, worker pool, queueing.
   - `cli.py` → CLI startup, environment validation, logging config, signal handling.
   - `config.py` → All environment/config parsing (`Config.from_env()`).
+  - `libretranslate_api.py` → Thin HTTP wrapper around LibreTranslate; manages raw
+    requests and thread-local sessions. Consumed by `translator.py`, which handles
+    translation logic, retries, and backoff.
   - `queue_db.py` → SQLite queue repository; thread-safe access to queued paths.
   - `translator.py` → `Translator` protocol and `LibreTranslateClient` implementation (retries/backoff).
   - `__init__.py` → Public exports.
