@@ -118,6 +118,7 @@ def main(argv: list[str] | None = None) -> None:
         config.src_lang,
         config.retry_count,
         config.backoff_delay,
+        config.availability_check_interval,
         api_key=config.api_key,
     )
     filter_target_languages(config, translator)

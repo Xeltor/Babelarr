@@ -3,6 +3,7 @@ import logging
 import pytest
 import requests
 
+import babelarr.translator as translator
 from babelarr.translator import LibreTranslateClient
 
 
@@ -298,3 +299,16 @@ def test_unsupported_target_language(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="Unsupported target language"):
         translator.translate(tmp_file, "nl")
+
+
+def test_wait_until_available_uses_interval(monkeypatch):
+    client = LibreTranslateClient(
+        "http://example", "en", availability_check_interval=0.1
+    )
+    monkeypatch.setattr(client, "ensure_languages", lambda: None)
+    states = iter([False, True])
+    monkeypatch.setattr(client, "is_available", lambda: next(states))
+    sleeps: list[float] = []
+    monkeypatch.setattr(translator.time, "sleep", lambda s: sleeps.append(s))
+    client.wait_until_available()
+    assert sleeps == [0.1]

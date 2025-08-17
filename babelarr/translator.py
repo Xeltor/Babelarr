@@ -48,11 +48,13 @@ class LibreTranslateClient:
         src_lang: str,
         retry_count: int = 3,
         backoff_delay: float = 1.0,
+        availability_check_interval: float = 30.0,
         api_key: str | None = None,
     ) -> None:
         self.src_lang = src_lang
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
+        self.availability_check_interval = availability_check_interval
         self.api_key = api_key
 
         self.api = LibreTranslateAPI(api_url)
@@ -80,9 +82,10 @@ class LibreTranslateClient:
                 else:
                     return
             logger.warning(
-                "LibreTranslate unreachable; retrying in %s seconds", self.backoff_delay
+                "LibreTranslate unreachable; retrying in %s seconds",
+                self.availability_check_interval,
             )
-            time.sleep(self.backoff_delay)
+            time.sleep(self.availability_check_interval)
 
     def ensure_languages(self) -> None:
         """Fetch and cache supported language mappings."""

@@ -104,6 +104,7 @@ class Application:
         self.tasks: queue.Queue[TranslationTask] = queue.Queue()
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
+        self.translator_available = threading.Event()
 
     def output_path(self, src: Path, lang: str) -> Path:
         stem = src.name.removesuffix(self.config.src_ext)
@@ -131,7 +132,10 @@ class Application:
         wait = getattr(self.translator, "wait_until_available", None)
         if callable(wait):
             wait()
+        self.translator_available.set()
         while not self.shutdown_event.is_set():
+            if not self.translator_available.wait(timeout=1):
+                continue
             try:
                 task = self.tasks.get(timeout=1)
             except queue.Empty:
@@ -151,6 +155,10 @@ class Application:
                 logger.error("translation failed for %s to %s: %s", path, lang, exc)
                 logger.debug("Traceback:", exc_info=True)
                 requeue = True
+                self.translator_available.clear()
+                if callable(wait):
+                    wait()
+                self.translator_available.set()
             except Exception as exc:
                 logger.error("translation failed for %s to %s: %s", path, lang, exc)
                 logger.debug("Traceback:", exc_info=True)

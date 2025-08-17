@@ -154,6 +154,40 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     )
 
 
+def test_workers_wait_when_translator_unavailable(tmp_path, app):
+    src = tmp_path / "fail.en.srt"
+    src.write_text("hello")
+
+    class FlakyTranslator:
+        def __init__(self):
+            self.calls = 0
+            self.wait_calls = 0
+
+        def translate(self, path, lang):
+            self.calls += 1
+            if self.calls == 1:
+                raise requests.ConnectionError("boom")
+            assert self.wait_calls >= 2
+            return b"ok"
+
+        def wait_until_available(self):
+            self.wait_calls += 1
+            return None
+
+    translator = FlakyTranslator()
+    app_instance = app(translator=translator)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+        app_instance.enqueue(src)
+        app_instance.tasks.join()
+        app_instance.shutdown_event.set()
+
+    assert translator.calls == 2
+    assert translator.wait_calls >= 2
+    assert app_instance.output_path(src, "nl").exists()
+
+
 def test_validate_environment_no_valid_dirs(tmp_path, monkeypatch):
     cfg = Config(
         root_dirs=[str(tmp_path / "missing")],
