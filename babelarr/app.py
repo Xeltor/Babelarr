@@ -24,6 +24,7 @@ class TranslationTask:
     path: Path
     lang: str
     task_id: str
+    priority: int = 0
 
 
 class SrtHandler(PatternMatchingEventHandler):
@@ -98,7 +99,9 @@ class Application:
     def __init__(self, config: Config, translator: Translator):
         self.config = config
         self.translator = translator
-        self.tasks: queue.Queue[TranslationTask] = queue.Queue()
+        self.tasks: queue.PriorityQueue[tuple[int, int, TranslationTask]] = (
+            queue.PriorityQueue()
+        )
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
         self.translator_available = threading.Event()
@@ -106,6 +109,7 @@ class Application:
         self._worker_threads: set[threading.Thread] = set()
         self._active_workers = 0
         self._worker_counter = 0
+        self._task_counter = 0
         self.scan_queue: queue.Queue[None] = queue.Queue()
         self._scan_thread: threading.Thread | None = None
 
@@ -138,7 +142,8 @@ class Application:
 
     def _get_task(self) -> TranslationTask | None:
         try:
-            return self.tasks.get(timeout=0.1)
+            _, _, task = self.tasks.get(timeout=0.1)
+            return task
         except queue.Empty:
             return None
 
@@ -208,7 +213,8 @@ class Application:
                     outcome = "failed"
                 elapsed = time.monotonic() - start_time
                 if requeue:
-                    self.tasks.put(task)
+                    self.tasks.put((task.priority, self._task_counter, task))
+                    self._task_counter += 1
                     logger.info(
                         "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
                         name,
@@ -250,7 +256,7 @@ class Application:
         out = self.output_path(path, lang)
         return not out.exists()
 
-    def enqueue(self, path: Path):
+    def enqueue(self, path: Path, *, priority: int = 0):
         logger.debug("Attempting to enqueue %s", path)
         if not path.is_file() or not path.name.lower().endswith(
             self.config.src_ext.lower()
@@ -266,7 +272,9 @@ class Application:
             if self.db.add(path, lang):
                 queued_any = True
                 task_id = uuid4().hex
-                self.tasks.put(TranslationTask(path, lang, task_id))
+                task = TranslationTask(path, lang, task_id, priority)
+                self.tasks.put((priority, self._task_counter, task))
+                self._task_counter += 1
                 self._ensure_workers()
                 logger.info(
                     "queued %s to %s id=%s (queue length: %d)",
@@ -306,14 +314,15 @@ class Application:
             logger.debug("Scanning %s", root)
             for file in Path(root).rglob(f"*{self.config.src_ext}"):
                 total += 1
-                self.enqueue(file)
+                self.enqueue(file, priority=1)
         logger.info("Full scan complete: %d files found", total)
 
     def load_pending(self):
         logger.info("Loading pending tasks")
         for path, lang in self.db.all():
             task = TranslationTask(path, lang, uuid4().hex)
-            self.tasks.put(task)
+            self.tasks.put((task.priority, self._task_counter, task))
+            self._task_counter += 1
             logger.info("restored %s to %s id=%s", path, lang, task.task_id)
             self._ensure_workers()
 
