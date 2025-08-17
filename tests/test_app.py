@@ -4,11 +4,13 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 import requests
 
 from babelarr import cli
+from babelarr.app import TranslationTask
 from babelarr.config import Config
 
 
@@ -371,3 +373,44 @@ def test_workers_spawn_and_exit(tmp_path, app):
             break
         time.sleep(0.05)
     assert instance._active_workers == 0
+
+
+def test_get_task_returns_task_or_none(tmp_path, app):
+    instance = app()
+    task = TranslationTask(tmp_path / "video.en.srt", "nl", "1")
+    instance.tasks.put(task)
+    assert instance._get_task() == task
+    assert instance._get_task() is None
+
+
+def test_process_translation_missing_file(tmp_path, caplog, app):
+    instance = app()
+    task = TranslationTask(tmp_path / "missing.en.srt", "nl", "1")
+    with caplog.at_level(logging.WARNING):
+        result = instance._process_translation(task, "worker")
+    assert result is False
+    assert "missing" in caplog.text
+
+
+def test_handle_failure_requeues_on_request_exception(app):
+    instance = app()
+    task = TranslationTask(Path("a"), "nl", "1")
+    calls = []
+
+    def fake_wait():
+        calls.append(1)
+
+    instance.translator_available.set()
+    requeue = instance._handle_failure(
+        task, requests.RequestException("boom"), "worker", fake_wait
+    )
+    assert requeue is True
+    assert calls == [1]
+
+
+def test_handle_failure_generic_exception(app):
+    instance = app()
+    task = TranslationTask(Path("a"), "nl", "1")
+    instance.translator_available.set()
+    requeue = instance._handle_failure(task, RuntimeError("boom"), "worker", None)
+    assert requeue is False
