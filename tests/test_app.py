@@ -1,5 +1,6 @@
 import logging
 import queue
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -125,8 +126,8 @@ def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
             app_instance.enqueue(src)
             app_instance.tasks.join()
             assert "disappeared" in caplog.text
-            assert "Skipped" in caplog.text
-            assert "Completed" not in caplog.text
+            assert "skipped" in caplog.text.lower()
+            assert "succeeded" not in caplog.text.lower()
 
         app_instance.shutdown_event.set()
 
@@ -157,7 +158,7 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     )
 
 
-def test_worker_name_in_logs(tmp_path, caplog, app):
+def test_worker_translating_logged_as_debug(tmp_path, caplog, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
@@ -166,17 +167,48 @@ def test_worker_name_in_logs(tmp_path, caplog, app):
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker") as executor:
         executor.submit(app_instance.worker)
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.DEBUG):
             app_instance.enqueue(src)
             app_instance.tasks.join()
             app_instance.shutdown_event.set()
 
     assert any(
-        rec.levelno == logging.INFO
+        rec.levelno == logging.DEBUG
         and rec.message.startswith("Worker worker_0")
-        and "translating" in rec.message
+        and re.search(r"\btranslating\b", rec.message)
         for rec in caplog.records
     )
+    assert not any(
+        rec.levelno == logging.INFO and re.search(r"\btranslating\b", rec.message)
+        for rec in caplog.records
+    )
+
+
+def test_translation_logs_summary_once(tmp_path, caplog, app):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    app_instance = app()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(app_instance.worker)
+
+        with caplog.at_level(logging.INFO):
+            app_instance.enqueue(src)
+            app_instance.tasks.join()
+            app_instance.shutdown_event.set()
+
+    info_logs = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.INFO and rec.message.startswith("translation ")
+    ]
+    assert len(info_logs) == 1
+    msg = info_logs[0].message
+    assert str(src) in msg
+    assert "nl" in msg
+    assert "succeeded" in msg
+    assert re.search(r"in \d+\.\d+s", msg)
 
 
 def test_workers_wait_when_translator_unavailable(tmp_path, app):
