@@ -92,6 +92,25 @@ def test_main_sets_urllib3_logger_to_warning(monkeypatch):
     assert logging.getLogger("urllib3").level == logging.WARNING
 
 
+def test_log_level_debug_enables_debug_output(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
+    logging.getLogger().handlers.clear()
+    logging.getLogger().setLevel(logging.NOTSET)
+    cli.main(["--log-level", "DEBUG", "queue"])
+    captured = capsys.readouterr()
+    assert "Config:" in captured.err
+
+
+def test_log_file_option_creates_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
+    log_file = tmp_path / "test.log"
+    logging.getLogger().handlers.clear()
+    logging.getLogger().setLevel(logging.NOTSET)
+    cli.main(["--log-level", "DEBUG", "--log-file", str(log_file), "queue"])
+    assert log_file.exists()
+    assert log_file.read_text() != ""
+
+
 def test_queue_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     db_path = tmp_path / "queue.db"
     with QueueRepository(str(db_path)) as repo:
