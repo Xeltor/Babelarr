@@ -32,6 +32,20 @@ def test_full_scan(tmp_path, monkeypatch, app):
     assert sorted(called) == sorted([first, second])
 
 
+def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
+    first = tmp_path / "one.en.srt"
+    first.write_text("a")
+    second = tmp_path / "two.en.srt"
+    second.write_text("b")
+
+    app_instance = app()
+    monkeypatch.setattr(app_instance, "_ensure_workers", lambda: None)
+    with caplog.at_level(logging.INFO):
+        app_instance.full_scan()
+
+    assert "Full scan complete: 2 files found" in caplog.text
+
+
 def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
     instance = app()
     called: list[str] = []
@@ -391,7 +405,7 @@ def test_worker_wait_called_once(app):
     assert calls["count"] == 1
 
 
-def test_workers_spawn_and_exit(tmp_path, app):
+def test_workers_spawn_and_exit(tmp_path, app, caplog):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
@@ -411,6 +425,7 @@ def test_workers_spawn_and_exit(tmp_path, app):
     translator = BlockingTranslator()
     instance = app(translator=translator)
     assert instance._active_workers == 0
+
     instance.enqueue(src)
 
     assert translator.started.wait(timeout=1)
