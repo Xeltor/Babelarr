@@ -105,6 +105,8 @@ class Application:
         self._worker_threads: set[threading.Thread] = set()
         self._active_workers = 0
         self._worker_counter = 0
+        self.scan_queue: queue.Queue[None] = queue.Queue()
+        self._scan_thread: threading.Thread | None = None
 
     def output_path(self, src: Path, lang: str) -> Path:
         stem = src.name.removesuffix(self.config.src_ext)
@@ -271,6 +273,25 @@ class Application:
         if not queued_any:
             logger.debug("All translations present for %s; skipping", path)
 
+    def request_scan(self) -> None:
+        """Enqueue a full directory scan to be handled by the scanner thread."""
+        self.scan_queue.put(None)
+
+    def scan_worker(self) -> None:
+        """Background worker that performs full filesystem scans."""
+        name = threading.current_thread().name
+        logger.debug("Scan worker %s starting", name)
+        while not self.shutdown_event.is_set():
+            try:
+                self.scan_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                self.full_scan()
+            finally:
+                self.scan_queue.task_done()
+        logger.debug("Scan worker %s exiting", name)
+
     def full_scan(self):
         logger.info("Performing full scan")
         for root in self.config.root_dirs:
@@ -307,8 +328,11 @@ class Application:
 
     def run(self):
         self.load_pending()
-        self.full_scan()
-        schedule.every(self.config.scan_interval_minutes).minutes.do(self.full_scan)
+        self.request_scan()
+        schedule.every(self.config.scan_interval_minutes).minutes.do(self.request_scan)
+
+        self._scan_thread = threading.Thread(target=self.scan_worker, name="scanner")
+        self._scan_thread.start()
 
         watcher = threading.Thread(target=self.watch, name="watcher")
         watcher.start()
@@ -320,6 +344,8 @@ class Application:
 
         logger.info("Shutdown initiated")
         watcher.join()
+        if self._scan_thread:
+            self._scan_thread.join()
         for t in list(self._worker_threads):
             t.join()
         self.db.close()
