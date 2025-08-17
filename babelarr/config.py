@@ -35,6 +35,7 @@ class Config:
     api_key: str | None = None
     retry_count: int = 3
     backoff_delay: float = 1.0
+    availability_check_interval: float = 30.0
     debounce: float = 0.1
     scan_interval_minutes: int = 60
 
@@ -125,6 +126,20 @@ class Config:
             )
             backoff_delay = default_backoff
 
+        default_availability = 30.0
+        raw_availability = os.environ.get(
+            "AVAILABILITY_CHECK_INTERVAL", str(default_availability)
+        )
+        try:
+            availability_check_interval = float(raw_availability)
+        except ValueError:
+            logger.warning(
+                "Invalid AVAILABILITY_CHECK_INTERVAL '%s'; defaulting to %s",
+                raw_availability,
+                default_availability,
+            )
+            availability_check_interval = default_availability
+
         default_debounce = 0.1
         raw_debounce = os.environ.get("DEBOUNCE_SECONDS", str(default_debounce))
         try:
@@ -152,7 +167,7 @@ class Config:
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
             "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
-            "BACKOFF_DELAY=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s",
+            "BACKOFF_DELAY=%s AVAILABILITY_CHECK_INTERVAL=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -162,6 +177,7 @@ class Config:
             bool(api_key),
             retry_count,
             backoff_delay,
+            availability_check_interval,
             debounce,
             scan_interval_minutes,
         )
@@ -177,6 +193,7 @@ class Config:
             api_key=api_key,
             retry_count=retry_count,
             backoff_delay=backoff_delay,
+            availability_check_interval=availability_check_interval,
             debounce=debounce,
             scan_interval_minutes=scan_interval_minutes,
         )
