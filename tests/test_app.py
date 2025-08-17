@@ -24,7 +24,9 @@ def test_full_scan(tmp_path, monkeypatch, app):
 
     app_instance = app()
     called = []
-    monkeypatch.setattr(app_instance, "enqueue", lambda p: called.append(p))
+    monkeypatch.setattr(
+        app_instance, "enqueue", lambda p, *, priority=0: called.append(p)
+    )
 
     app_instance.full_scan()
 
@@ -48,6 +50,39 @@ def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
     thread.join()
 
     assert called == ["scanner"]
+
+
+def test_scan_tasks_lower_priority_than_watcher(tmp_path, app, monkeypatch):
+    scan_file = tmp_path / "scan.en.srt"
+    scan_file.write_text("a")
+    instance = app()
+
+    order: list[Path] = []
+
+    class RecordingTranslator:
+        def translate(self, path, lang):
+            order.append(path)
+            return b""
+
+        def wait_until_available(self):
+            return None
+
+    instance.translator = RecordingTranslator()
+
+    monkeypatch.setattr(instance, "_ensure_workers", lambda: None)
+
+    instance.full_scan()
+
+    watch_file = tmp_path / "watch.en.srt"
+    watch_file.write_text("b")
+    instance.enqueue(watch_file)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(instance.worker)
+        instance.tasks.join()
+        instance.shutdown_event.set()
+
+    assert order == [watch_file, scan_file]
 
 
 def test_db_persistence_across_restarts(tmp_path, app):
@@ -378,7 +413,8 @@ def test_workers_spawn_and_exit(tmp_path, app):
 def test_get_task_returns_task_or_none(tmp_path, app):
     instance = app()
     task = TranslationTask(tmp_path / "video.en.srt", "nl", "1")
-    instance.tasks.put(task)
+    instance.tasks.put((task.priority, instance._task_counter, task))
+    instance._task_counter += 1
     assert instance._get_task() == task
     assert instance._get_task() is None
 
