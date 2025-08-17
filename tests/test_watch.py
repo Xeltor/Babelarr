@@ -127,7 +127,7 @@ def test_srt_handler_delete_removes_from_queue(tmp_path, app):
     app_instance = app(translator=translator)
     app_instance.enqueue(path)
     translator.started.wait()
-    assert app_instance.db.all() == [(path, "nl")]
+    assert app_instance.db.all() == [(path, "nl", 0)]
 
     path.unlink()
     handler = SrtHandler(app_instance)

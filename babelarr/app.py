@@ -264,7 +264,7 @@ class Application:
                     "Translation already exists: %s", self.output_path(path, lang)
                 )
                 continue
-            if self.db.add(path, lang):
+            if self.db.add(path, lang, priority):
                 queued_any = True
                 task_id = uuid4().hex
                 task = TranslationTask(path, lang, task_id, priority)
@@ -311,9 +311,9 @@ class Application:
 
     def load_pending(self):
         logger.info("Loading pending tasks")
-        for path, lang in self.db.all():
-            task = TranslationTask(path, lang, uuid4().hex)
-            self.tasks.put((task.priority, self._task_counter, task))
+        for path, lang, priority in self.db.all():
+            task = TranslationTask(path, lang, uuid4().hex, priority)
+            self.tasks.put((priority, self._task_counter, task))
             self._task_counter += 1
             logger.info("restored %s to %s id=%s", path, lang, task.task_id)
             self._ensure_workers()
