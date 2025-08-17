@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger("babelarr")
+logger = logging.getLogger(__name__)
 
 
 @dataclass

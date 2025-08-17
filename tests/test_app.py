@@ -150,8 +150,9 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     assert any(
         rec.levelno == logging.DEBUG
         and "finished processing" in rec.message.lower()
-        and str(src) in rec.message
-        and "[nl]" in rec.message
+        and rec.path == str(src)
+        and rec.lang == "nl"
+        and rec.task_id not in (None, "-")
         for rec in caplog.records
     )
 
@@ -172,8 +173,11 @@ def test_worker_translating_logged_as_debug(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and rec.message.startswith("Worker worker_0")
+        and rec.threadName == "worker_0"
+        and rec.message.startswith("Worker")
         and re.search(r"\btranslating\b", rec.message)
+        and rec.path == str(src)
+        and rec.lang == "nl"
         for rec in caplog.records
     )
     assert not any(
@@ -202,11 +206,11 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
         if rec.levelno == logging.INFO and rec.message.startswith("translation ")
     ]
     assert len(info_logs) == 1
-    msg = info_logs[0].message
-    assert str(src) in msg
-    assert "nl" in msg
-    assert "succeeded" in msg
-    assert re.search(r"in \d+\.\d+s", msg)
+    rec = info_logs[0]
+    assert rec.path == str(src)
+    assert rec.lang == "nl"
+    assert "succeeded" in rec.message
+    assert re.search(r"in \d+\.\d+s", rec.message)
 
 
 def test_workers_wait_when_translator_unavailable(tmp_path, app):

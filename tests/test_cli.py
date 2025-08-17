@@ -99,6 +99,7 @@ def test_log_level_debug_enables_debug_output(tmp_path, monkeypatch, capsys):
     cli.main(["--log-level", "DEBUG", "queue"])
     captured = capsys.readouterr()
     assert "Config:" in captured.err
+    assert "[babelarr.config]" in captured.err
 
 
 def test_log_file_option_creates_file(tmp_path, monkeypatch):
