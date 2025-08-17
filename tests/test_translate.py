@@ -83,7 +83,7 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
         )
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests.Session, "get", fake_get)
 
     translator = LibreTranslateClient(
@@ -120,7 +120,7 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
         )
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests.Session, "get", fake_get)
 
     translator = LibreTranslateClient(
@@ -142,7 +142,7 @@ def test_api_key_included(monkeypatch, tmp_path):
 
     captured: dict[str, dict | None] = {"data": None}
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900):
+    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
         assert timeout == 900
         captured["data"] = data
         resp = requests.Response()
@@ -160,7 +160,7 @@ def test_api_key_included(monkeypatch, tmp_path):
         )
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests.Session, "get", fake_get)
 
     translator = LibreTranslateClient(
@@ -184,7 +184,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     captured: dict[str, dict | None] = {"data": None}
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900):
+    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
         assert timeout == 900
         captured["data"] = data
         resp = requests.Response()
@@ -202,7 +202,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
         )
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests.Session, "get", fake_get)
 
     translator = LibreTranslateClient(
@@ -223,7 +223,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900):
+    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
         assert timeout == 900
         resp = requests.Response()
         resp.status_code = 200
@@ -233,24 +233,29 @@ def test_download_translated_file(monkeypatch, tmp_path):
     downloaded = {"url": None}
     calls: list[tuple[str, int]] = []
 
-    def fake_get(self, url, *, timeout=900):
+    def fake_get_session(self, url, *, timeout=900):
         assert timeout == 900
         calls.append((url, timeout))
         resp = requests.Response()
-        if url.endswith("/languages"):
-            resp.status_code = 200
-            resp._content = (
-                b'[{"code": "en", "targets": ["en", "nl"]},'
-                b'{"code": "xx", "targets": ["nl"]}]'
-            )
-        else:
-            downloaded["url"] = url
-            resp.status_code = 200
-            resp._content = b"translated"
+        resp.status_code = 200
+        resp._content = (
+            b'[{"code": "en", "targets": ["en", "nl"]},'
+            b'{"code": "xx", "targets": ["nl"]}]'
+        )
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
-    monkeypatch.setattr(requests.Session, "get", fake_get)
+    def fake_get(url, *, timeout=900, headers=None):
+        assert timeout == 900
+        calls.append((url, timeout))
+        downloaded["url"] = url
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"translated"
+        return resp
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests.Session, "get", fake_get_session)
+    monkeypatch.setattr(requests, "get", fake_get)
 
     translator = LibreTranslateClient(
         "http://example", "en", retry_count=1, backoff_delay=0

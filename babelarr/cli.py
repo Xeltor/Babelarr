@@ -129,6 +129,7 @@ def main(argv: list[str] | None = None) -> None:
         config.backoff_delay,
         config.availability_check_interval,
         api_key=config.api_key,
+        persistent_session=config.persistent_sessions,
     )
     filter_target_languages(config, translator)
     app = Application(config, translator)

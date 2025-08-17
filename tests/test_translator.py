@@ -12,19 +12,19 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     tmp_file = tmp_path / "a.srt"
     tmp_file.write_text("dummy")
 
-    sessions: dict[int, requests.Session] = {}
+    calls: dict[int, dict | None] = {}
     lock = threading.Lock()
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900):
+    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
         assert timeout == 900
         with lock:
-            sessions[id(threading.current_thread())] = self
+            calls[id(threading.current_thread())] = headers
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
         return resp
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
 
     api = LibreTranslateAPI("http://only")
 
@@ -46,7 +46,8 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
 
     assert not errors
     assert results == [b"ok"] * 5
-    assert len({id(s) for s in sessions.values()}) == 5
+    assert len(calls) == 5
+    assert all(h == {"Connection": "close"} for h in calls.values())
 
     asyncio.run(api.close())
 

@@ -44,11 +44,11 @@ def test_translate_file_error(monkeypatch, tmp_path):
     tmp_file = tmp_path / "a.srt"
     tmp_file.write_text("dummy")
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900):
+    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
         assert timeout == 900
         raise requests.ConnectionError("fail")
 
-    monkeypatch.setattr(requests.Session, "post", fake_post)
+    monkeypatch.setattr(requests, "post", fake_post)
 
     api = LibreTranslateAPI("http://only")
 
@@ -61,12 +61,64 @@ def test_translate_file_error(monkeypatch, tmp_path):
 def test_translate_file(monkeypatch, tmp_path):
     tmp_file = tmp_path / "b.srt"
     tmp_file.write_text("dummy")
+    headers_seen: list[dict | None] = []
 
-    calls: list[tuple[str, int]] = []
-
-    def fake_post(self, url, *, files=None, data=None, timeout):
-        calls.append((url, timeout))
+    def fake_post(url, *, files=None, data=None, timeout, headers=None):
+        headers_seen.append(headers)
         assert timeout == 900
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"ok"
+        return resp
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    api = LibreTranslateAPI("http://only")
+
+    import threading
+
+    def worker():
+        api.translate_file(tmp_file, "en", "nl")
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert headers_seen == [{"Connection": "close"}, {"Connection": "close"}]
+
+    asyncio.run(api.close())
+
+
+def test_download_uses_connection_close(monkeypatch):
+    calls: list[dict | None] = []
+
+    def fake_get(url, *, timeout=900, headers=None):
+        calls.append(headers)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"data"
+        return resp
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    api = LibreTranslateAPI("http://only")
+    resp = api.download("http://only/file")
+    assert resp.content == b"data"
+    assert calls == [{"Connection": "close"}]
+
+    asyncio.run(api.close())
+
+
+def test_translate_file_persistent_session(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "c.srt"
+    tmp_file.write_text("dummy")
+
+    sessions = []
+
+    def fake_post(self, url, *, files=None, data=None, timeout=900, headers=None):
+        sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
@@ -74,10 +126,10 @@ def test_translate_file(monkeypatch, tmp_path):
 
     monkeypatch.setattr(requests.Session, "post", fake_post)
 
-    api = LibreTranslateAPI("http://only")
-    resp = api.translate_file(tmp_file, "en", "nl")
+    api = LibreTranslateAPI("http://only", persistent_session=True)
+    api.translate_file(tmp_file, "en", "nl")
+    api.translate_file(tmp_file, "en", "nl")
 
-    assert calls == [("http://only/translate_file", 900)]
-    assert resp.content == b"ok"
+    assert len(set(sessions)) == 1
 
     asyncio.run(api.close())

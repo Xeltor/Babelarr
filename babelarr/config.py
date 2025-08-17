@@ -40,6 +40,7 @@ class Config:
     availability_check_interval: float = 30.0
     debounce: float = 0.1
     scan_interval_minutes: int = 60
+    persistent_sessions: bool = False
 
     @staticmethod
     def _parse_target_languages(raw: str | None) -> list[str]:
@@ -124,6 +125,18 @@ class Config:
             logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
             return default
 
+    @staticmethod
+    def _parse_bool(name: str, raw: str | None, default: bool) -> bool:
+        raw_val = raw or str(default)
+        if isinstance(raw_val, str):
+            lowered = raw_val.lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+        logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+        return default
+
     @classmethod
     def from_env(cls) -> "Config":
         root_dirs = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
@@ -151,6 +164,9 @@ class Config:
             ),
             "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
+            "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
+                "PERSISTENT_SESSIONS", v, False
+            ),
         }
 
         parsed = {
@@ -164,11 +180,13 @@ class Config:
         availability_check_interval = parsed["AVAILABILITY_CHECK_INTERVAL"]
         debounce = parsed["DEBOUNCE_SECONDS"]
         scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
+        persistent_sessions = parsed["PERSISTENT_SESSIONS"]
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
             "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
-            "BACKOFF_DELAY=%s AVAILABILITY_CHECK_INTERVAL=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s",
+            "BACKOFF_DELAY=%s AVAILABILITY_CHECK_INTERVAL=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s "
+            "PERSISTENT_SESSIONS=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -181,6 +199,7 @@ class Config:
             availability_check_interval,
             debounce,
             scan_interval_minutes,
+            persistent_sessions,
         )
 
         return cls(
@@ -197,4 +216,5 @@ class Config:
             availability_check_interval=availability_check_interval,
             debounce=debounce,
             scan_interval_minutes=scan_interval_minutes,
+            persistent_sessions=persistent_sessions,
         )

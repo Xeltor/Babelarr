@@ -12,12 +12,15 @@ class LibreTranslateAPI:
     """HTTP helper for a single LibreTranslate endpoint.
 
     The client maintains a *per-thread* :class:`requests.Session` for all
-    requests to ``base_url``.
+    requests to ``base_url`` when ``persistent_session`` is ``True``. By
+    default, a fresh connection is created for each request to avoid sticky
+    connections when multiple workers are used behind a load balancer.
     """
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, persistent_session: bool = False) -> None:
         self.base_url = base_url.rstrip("/")
         self._local = threading.local()
+        self.persistent_session = persistent_session
 
     def _get_session(self) -> requests.Session:
         session = getattr(self._local, "session", None)
@@ -56,12 +59,20 @@ class LibreTranslateAPI:
         url = self.base_url + "/translate_file"
         with open(path, "rb") as fh:
             files = {"file": fh}
-            return self.session.post(url, files=files, data=data, timeout=900)
+            if self.persistent_session:
+                return self.session.post(url, files=files, data=data, timeout=900)
+            headers = {"Connection": "close"}
+            return requests.post(
+                url, files=files, data=data, timeout=900, headers=headers
+            )
 
     def download(self, url: str) -> requests.Response:
-        """Download *url* using the thread-local session."""
+        """Download *url* using a fresh connection by default."""
 
-        return self.session.get(url, timeout=900)
+        if self.persistent_session:
+            return self.session.get(url, timeout=900)
+        headers = {"Connection": "close"}
+        return requests.get(url, timeout=900, headers=headers)
 
     async def close(self) -> None:
         """Asynchronously close the thread-local session for this thread."""
