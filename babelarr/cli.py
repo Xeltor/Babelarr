@@ -86,6 +86,12 @@ def filter_target_languages(config: Config, translator: LibreTranslateClient) ->
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="babelarr")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level",
+    )
+    parser.add_argument("--log-file", help="Write logs to a file")
     sub = parser.add_subparsers(dest="command")
 
     queue_parser = sub.add_parser("queue", help="Inspect the processing queue")
@@ -93,8 +99,11 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
 
+    log_level = (args.log_level or os.environ.get("LOG_LEVEL", "INFO")).upper()
+    log_file = args.log_file or os.environ.get("LOG_FILE")
     logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        level=log_level,
+        filename=log_file,
         format="%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s",
     )
     logging.getLogger("watchdog").setLevel(logging.INFO)

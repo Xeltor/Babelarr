@@ -22,6 +22,7 @@ docker run -d --name babelarr \
   -e TARGET_LANGS="nl,bs" \
   -e LIBRETRANSLATE_URL="http://libretranslate:5000" \
   -e LOG_LEVEL="INFO" \
+  -e LOG_FILE="/config/babelarr.log" \
   babelarr
 ```
 
@@ -35,6 +36,7 @@ docker run -d --name babelarr \
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | Base URL of the LibreTranslate instance (no path). |
 | `LIBRETRANSLATE_API_KEY` | *(unset)* | API key for authenticated LibreTranslate instances. |
 | `LOG_LEVEL` | `INFO` | Controls verbosity of console output. |
+| `LOG_FILE` | *(unset)* | If set, writes logs to the specified file. |
 | `WORKERS` | `1` | Number of translation worker threads (maximum 10). |
 | `RETRY_COUNT` | `3` | Translation retry attempts. |
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
@@ -42,6 +44,8 @@ docker run -d --name babelarr \
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 
 If `TARGET_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup.
+
+Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and `LOG_FILE` environment variables respectively.
 
 `LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
 
