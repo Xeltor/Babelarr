@@ -1,7 +1,9 @@
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("babelarr")
 
@@ -39,13 +41,11 @@ class Config:
     debounce: float = 0.1
     scan_interval_minutes: int = 60
 
-    @classmethod
-    def from_env(cls) -> "Config":
-        root_dirs = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
-
-        raw_langs = os.environ.get("TARGET_LANGS", "nl,bs").split(",")
+    @staticmethod
+    def _parse_target_languages(raw: str | None) -> list[str]:
+        raw_langs = (raw if raw is not None else "nl,bs").split(",")
         target_langs: list[str] = []
-        seen = set()
+        seen: set[str] = set()
         for lang in raw_langs:
             cleaned = lang.strip()
             if not cleaned:
@@ -64,23 +64,18 @@ class Config:
                 continue
             target_langs.append(normalized)
             seen.add(normalized)
-
         if not target_langs:
             logger.error("No valid languages found in TARGET_LANGS")
             raise ValueError(
-                "TARGET_LANGS must contain at least one valid language code"
+                "TARGET_LANGS must contain at least one valid language code",
             )
+        return target_langs
 
-        src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
-        if not src_lang.isalpha():
-            logger.warning("Invalid SRC_LANG '%s'; defaulting to 'en'", src_lang)
-            src_lang = "en"
-        src_ext = f".{src_lang}.srt"
-        api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
-
+    @staticmethod
+    def _parse_workers(raw: str | None) -> int:
         MAX_WORKERS = 10
         default_workers = 1
-        raw_workers = os.environ.get("WORKERS", str(default_workers))
+        raw_workers = raw or str(default_workers)
         try:
             requested = int(raw_workers)
         except ValueError:
@@ -95,6 +90,50 @@ class Config:
                 requested,
                 MAX_WORKERS,
             )
+        return workers
+
+    @staticmethod
+    def _parse_scan_interval(raw: str | None) -> int:
+        default_scan_interval = 60
+        raw_scan = raw or str(default_scan_interval)
+        try:
+            return int(raw_scan)
+        except ValueError:
+            logger.warning(
+                "Invalid SCAN_INTERVAL_MINUTES '%s'; defaulting to %s",
+                raw_scan,
+                default_scan_interval,
+            )
+            return default_scan_interval
+
+    @staticmethod
+    def _parse_int(name: str, raw: str | None, default: int) -> int:
+        raw_val = raw or str(default)
+        try:
+            return int(raw_val)
+        except ValueError:
+            logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+            return default
+
+    @staticmethod
+    def _parse_float(name: str, raw: str | None, default: float) -> float:
+        raw_val = raw or str(default)
+        try:
+            return float(raw_val)
+        except ValueError:
+            logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+            return default
+
+    @classmethod
+    def from_env(cls) -> "Config":
+        root_dirs = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
+
+        src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
+        if not src_lang.isalpha():
+            logger.warning("Invalid SRC_LANG '%s'; defaulting to 'en'", src_lang)
+            src_lang = "en"
+        src_ext = f".{src_lang}.srt"
+        api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
         queue_db_path = Path(os.environ.get("QUEUE_DB", "/config/queue.db"))
         queue_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,67 +141,29 @@ class Config:
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
 
-        default_retry_count = 3
-        raw_retry = os.environ.get("RETRY_COUNT", str(default_retry_count))
-        try:
-            retry_count = int(raw_retry)
-        except ValueError:
-            logger.warning(
-                "Invalid RETRY_COUNT '%s'; defaulting to %s",
-                raw_retry,
-                default_retry_count,
-            )
-            retry_count = default_retry_count
+        parsers: dict[str, Callable[[str | None], Any]] = {
+            "TARGET_LANGS": cls._parse_target_languages,
+            "WORKERS": cls._parse_workers,
+            "RETRY_COUNT": lambda v: cls._parse_int("RETRY_COUNT", v, 3),
+            "BACKOFF_DELAY": lambda v: cls._parse_float("BACKOFF_DELAY", v, 1.0),
+            "AVAILABILITY_CHECK_INTERVAL": lambda v: cls._parse_float(
+                "AVAILABILITY_CHECK_INTERVAL", v, 30.0
+            ),
+            "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
+            "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
+        }
 
-        default_backoff = 1.0
-        raw_backoff = os.environ.get("BACKOFF_DELAY", str(default_backoff))
-        try:
-            backoff_delay = float(raw_backoff)
-        except ValueError:
-            logger.warning(
-                "Invalid BACKOFF_DELAY '%s'; defaulting to %s",
-                raw_backoff,
-                default_backoff,
-            )
-            backoff_delay = default_backoff
+        parsed = {
+            name: parser(os.environ.get(name)) for name, parser in parsers.items()
+        }
 
-        default_availability = 30.0
-        raw_availability = os.environ.get(
-            "AVAILABILITY_CHECK_INTERVAL", str(default_availability)
-        )
-        try:
-            availability_check_interval = float(raw_availability)
-        except ValueError:
-            logger.warning(
-                "Invalid AVAILABILITY_CHECK_INTERVAL '%s'; defaulting to %s",
-                raw_availability,
-                default_availability,
-            )
-            availability_check_interval = default_availability
-
-        default_debounce = 0.1
-        raw_debounce = os.environ.get("DEBOUNCE_SECONDS", str(default_debounce))
-        try:
-            debounce = float(raw_debounce)
-        except ValueError:
-            logger.warning(
-                "Invalid DEBOUNCE_SECONDS '%s'; defaulting to %s",
-                raw_debounce,
-                default_debounce,
-            )
-            debounce = default_debounce
-
-        default_scan_interval = 60
-        raw_scan = os.environ.get("SCAN_INTERVAL_MINUTES", str(default_scan_interval))
-        try:
-            scan_interval_minutes = int(raw_scan)
-        except ValueError:
-            logger.warning(
-                "Invalid SCAN_INTERVAL_MINUTES '%s'; defaulting to %s",
-                raw_scan,
-                default_scan_interval,
-            )
-            scan_interval_minutes = default_scan_interval
+        target_langs = parsed["TARGET_LANGS"]
+        workers = parsed["WORKERS"]
+        retry_count = parsed["RETRY_COUNT"]
+        backoff_delay = parsed["BACKOFF_DELAY"]
+        availability_check_interval = parsed["AVAILABILITY_CHECK_INTERVAL"]
+        debounce = parsed["DEBOUNCE_SECONDS"]
+        scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
 
         logger.debug(
             "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
