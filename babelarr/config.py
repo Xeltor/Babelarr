@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("babelarr")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
