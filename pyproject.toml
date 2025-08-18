@@ -17,3 +17,9 @@ dependencies = [
 
 [project.scripts]
 babelarr = "babelarr.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "types-requests",
+]
