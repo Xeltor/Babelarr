@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 
 import pytest
@@ -64,6 +65,7 @@ def test_translate_success(monkeypatch, tmp_path):
     tmp_file.write_text("dummy")
 
     client = _prepared_client()
+    client.retry_count = 1
 
     def fake_translate_file(path, src, dst, api_key):
         resp = requests.Response()
@@ -90,7 +92,7 @@ def test_translate_success(monkeypatch, tmp_path):
     assert called["download"] is False
 
 
-def test_translate_error(monkeypatch, tmp_path):
+def test_translate_error(monkeypatch, tmp_path, caplog):
     tmp_file = tmp_path / "sample.en.srt"
     tmp_file.write_text("dummy")
 
@@ -100,13 +102,25 @@ def test_translate_error(monkeypatch, tmp_path):
         resp = requests.Response()
         resp.status_code = 400
         resp._content = b'{"error": "boom"}'
+        resp.headers = {"X-Test": "1"}
         return resp
 
     monkeypatch.setattr(client.api, "translate_file", fake_translate_file)
 
-    with pytest.raises(requests.HTTPError):
-        client.translate(tmp_file, "nl")
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(requests.HTTPError):
+            client.translate(tmp_file, "nl")
+
     client.close()
+
+    error_logs = [r for r in caplog.records if "status=400" in r.getMessage()]
+    assert error_logs
+    msg = error_logs[0].getMessage()
+    assert "HTTP error from LibreTranslate" in msg
+    assert "status=400" in msg
+    assert "detail=Bad Request: boom" in msg
+    assert "headers={'X-Test': '1'}" in msg
+    assert 'body={"error": "boom"}' in msg
 
 
 def test_translate_download(monkeypatch, tmp_path):

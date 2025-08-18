@@ -105,22 +105,27 @@ class LibreTranslateClient:
         if resp.status_code == 200:
             return
 
-        message = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
+        detail = ERROR_MESSAGES.get(resp.status_code, "Unexpected error")
         try:
             err_json = resp.json()
-            detail = (
+            extra = (
                 err_json.get("error")
                 or err_json.get("message")
                 or err_json.get("detail")
             )
-            if detail:
-                message = f"{message}: {detail}"
+            if extra:
+                detail = f"{detail}: {extra}"
         except ValueError:
             pass
 
-        logger.error("HTTP %s from %s: %s", resp.status_code, context, message)
-        logger.error("Headers: %s", resp.headers)
-        logger.error("Body: %s", resp.text)
+        logger.error(
+            "HTTP error from %s status=%s detail=%s headers=%s body=%s",
+            context,
+            resp.status_code,
+            detail,
+            resp.headers,
+            resp.text,
+        )
         if logger.isEnabledFor(logging.DEBUG):
             import tempfile
 
