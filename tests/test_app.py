@@ -119,6 +119,39 @@ def test_db_persistence_across_restarts(tmp_path, app):
     assert app2.output_path(src, "nl").exists()
 
 
+def test_load_pending_logs_summary(tmp_path, caplog, app):
+    first = tmp_path / "one.en.srt"
+    first.write_text("a")
+    second = tmp_path / "two.en.srt"
+    second.write_text("b")
+
+    app1 = app()
+    app1._ensure_workers = lambda: None
+    app1.enqueue(first)
+    app1.enqueue(second)
+
+    app2 = app()
+    app2._ensure_workers = lambda: None
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        app2.load_pending()
+
+    info_restored = [
+        rec.message
+        for rec in caplog.records
+        if rec.levelno == logging.INFO and "restored" in rec.message
+    ]
+    assert info_restored == ["load_pending restored=2"]
+
+    debug_restored = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.DEBUG and rec.message.startswith("restored ")
+    ]
+    assert len(debug_restored) == 2
+
+
 def test_worker_retry_on_network_failure(tmp_path, caplog, app):
     src = tmp_path / "fail.en.srt"
     src.write_text("hello")
