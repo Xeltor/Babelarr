@@ -182,7 +182,7 @@ def test_filter_target_languages_removes_unsupported(caplog):
     with caplog.at_level(logging.WARNING):
         cli.filter_target_languages(config, translator)
         assert config.target_langs == ["nl"]
-        assert "unsupported target" in caplog.text.lower()
+        assert "unsupported_targets" in caplog.text
 
 
 def test_filter_target_languages_exits_when_none_supported():

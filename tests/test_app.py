@@ -43,7 +43,7 @@ def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
     with caplog.at_level(logging.INFO):
         app_instance.full_scan()
 
-    assert "Full scan complete: 2 files found" in caplog.text
+    assert "app: scan_complete files=2" in caplog.text
 
 
 def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
@@ -145,7 +145,7 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
         with caplog.at_level(logging.ERROR):
             app_instance.enqueue(src)
             app_instance.tasks.join()
-            assert any("translation failed" in r.message for r in caplog.records)
+            assert any("translation_failed" in r.message for r in caplog.records)
 
         app_instance.shutdown_event.set()
 
@@ -164,11 +164,12 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
         return True
 
     monkeypatch.setattr(app_instance, "translate_file", fake_translate_file)
+    monkeypatch.setattr(app_instance, "_ensure_workers", lambda: None)
 
     with caplog.at_level(logging.INFO):
         app_instance.enqueue(sub_file)
         queued_logs = [r for r in caplog.records if r.levelno == logging.INFO]
-        assert any("queue length: 1" in r.message for r in queued_logs)
+        assert any("queue=1" in r.message for r in queued_logs)
         assert any(
             f"path={sub_file}" in r.message
             and "lang=nl" in r.message
@@ -182,7 +183,7 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
             app_instance.tasks.join()
             app_instance.shutdown_event.set()
 
-        done_logs = [r for r in caplog.records if "queue length: 0" in r.message]
+        done_logs = [r for r in caplog.records if "queue=0" in r.message]
         assert any(
             f"path={sub_file}" in r.message and "lang=nl" in r.message
             for r in done_logs
@@ -211,9 +212,9 @@ def test_worker_skips_output_if_source_deleted(tmp_path, caplog, app):
         with caplog.at_level(logging.INFO):
             app_instance.enqueue(src)
             app_instance.tasks.join()
-            assert "disappeared" in caplog.text
-            assert "skipped" in caplog.text.lower()
-            assert "succeeded" not in caplog.text.lower()
+            assert "reason=source_missing" in caplog.text
+            assert "outcome=skipped" in caplog.text
+            assert "succeeded" not in caplog.text
 
         app_instance.shutdown_event.set()
 
@@ -237,7 +238,7 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and "finished processing" in rec.message.lower()
+        and rec.message.startswith("app: worker_finish")
         and f"path={src}" in rec.message
         and "lang=nl" in rec.message
         and "task_id=" in rec.message
@@ -261,12 +262,12 @@ def test_worker_translating_logged_as_debug(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and rec.message.startswith("Worker worker_0")
-        and re.search(r"\btranslating\b", rec.message)
+        and rec.message.startswith("app: worker_translate")
+        and "name=worker_0" in rec.message
         for rec in caplog.records
     )
     assert not any(
-        rec.levelno == logging.INFO and re.search(r"\btranslating\b", rec.message)
+        rec.levelno == logging.INFO and "worker_translate" in rec.message
         for rec in caplog.records
     )
 
@@ -288,15 +289,15 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
     info_logs = [
         rec
         for rec in caplog.records
-        if rec.levelno == logging.INFO and rec.message.startswith("translation ")
+        if rec.levelno == logging.INFO and rec.message.startswith("app: translation ")
     ]
     assert len(info_logs) == 1
     msg = info_logs[0].message
     assert f"path={src}" in msg
     assert "lang=nl" in msg
     assert "task_id=" in msg
-    assert "succeeded" in msg
-    assert re.search(r"in \d+\.\d+s", msg)
+    assert "outcome=succeeded" in msg
+    assert re.search(r"duration=\d+\.\d+s", msg)
 
 
 def test_workers_wait_when_translator_unavailable(tmp_path, app):
@@ -359,7 +360,7 @@ def test_validate_environment_api_unreachable(config, monkeypatch, caplog):
     monkeypatch.setattr(cli.requests, "head", fail)
     with caplog.at_level(logging.ERROR):
         cli.validate_environment(config)
-        assert "Translation service" in caplog.text
+        assert "service_unreachable" in caplog.text
 
 
 def test_configurable_scan_interval(monkeypatch, config, app):

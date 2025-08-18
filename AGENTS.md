@@ -52,6 +52,12 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - Fail fast on unrecoverable errors; raise typed exceptions in library code. Handle at the edges (CLI/app) with clear messages.
 - Network interactions must use timeouts and retries with exponential backoff where appropriate (see `LibreTranslateClient`).
 
+### Logging conventions
+
+- Prefix messages with the module name (e.g., `app`, `cli`, `translator`).
+- Begin messages with a lowercase action verb.
+- Express context as `key=value` pairs.
+
 ---
 
 ## Testing rules
@@ -98,6 +104,7 @@ Codex (and humans) must ensure:
 - [ ] `make check` passes locally (setup → lint → tests).
 - [ ] New/changed behavior is covered by tests.
 - [ ] No debug prints; sensible logging only.
+- [ ] Log messages follow the logging conventions.
 - [ ] Public CLI behavior changes are documented in `README.md`.
 - [ ] No direct env reads or hidden globals; configuration goes through `Config`.
 - [ ] No secrets or credentials are committed.

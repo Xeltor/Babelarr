@@ -77,13 +77,11 @@ class LibreTranslateClient:
                 try:
                     self.ensure_languages()
                 except requests.RequestException as exc:
-                    logger.warning(
-                        "Failed to fetch languages from LibreTranslate: %s", exc
-                    )
+                    logger.warning("translator: fetch_languages_failed error=%s", exc)
                 else:
                     return
             logger.warning(
-                "LibreTranslate unreachable; retrying in %s seconds",
+                "translator: service_unreachable retry=%s",
                 self.availability_check_interval,
             )
             time.sleep(self.availability_check_interval)
@@ -119,7 +117,7 @@ class LibreTranslateClient:
             pass
 
         logger.error(
-            "HTTP error from %s status=%s detail=%s headers=%s body=%s",
+            "translator: http_error context=%s status=%s detail=%s headers=%s body=%s",
             context,
             resp.status_code,
             detail,
@@ -134,7 +132,7 @@ class LibreTranslateClient:
             )
             try:
                 tmp.write(resp.content)
-                logger.debug("Saved failing response to %s", tmp.name)
+                logger.debug("translator: save_error_response path=%s", tmp.name)
             finally:
                 tmp.close()
         resp.raise_for_status()
@@ -172,14 +170,14 @@ class LibreTranslateClient:
             except requests.RequestException as exc:
                 if attempt >= self.retry_count:
                     logger.error(
-                        "LibreTranslate request failed after %s attempts: %s",
+                        "translator: request_failed attempts=%s error=%s",
                         attempt,
                         exc,
                     )
                     raise
                 delay = self.backoff_delay * (2 ** (attempt - 1))
                 logger.warning(
-                    "Attempt %s failed: %s. Retrying in %s seconds",
+                    "translator: attempt_failed attempt=%s error=%s delay=%s",
                     attempt,
                     exc,
                     delay,

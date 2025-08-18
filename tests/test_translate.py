@@ -102,7 +102,7 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
 
     assert result == b"ok"
     assert attempts["count"] == 3
-    retry_logs = [r for r in caplog.records if "Attempt" in r.message]
+    retry_logs = [r for r in caplog.records if "attempt_failed" in r.message]
     assert len(retry_logs) == 2
 
 
@@ -139,7 +139,7 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
     translator.close()
 
     assert attempts["count"] == 2
-    assert "failed after 2 attempts" in caplog.text
+    assert "request_failed attempts=2" in caplog.text
 
 
 def test_api_key_included(monkeypatch, tmp_path):

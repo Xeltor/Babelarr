@@ -116,7 +116,7 @@ def test_translate_error(monkeypatch, tmp_path, caplog):
     error_logs = [r for r in caplog.records if "status=400" in r.getMessage()]
     assert error_logs
     msg = error_logs[0].getMessage()
-    assert "HTTP error from LibreTranslate" in msg
+    assert "http_error context=LibreTranslate" in msg
     assert "status=400" in msg
     assert "detail=Bad Request: boom" in msg
     assert "headers={'X-Test': '1'}" in msg
