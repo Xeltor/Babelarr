@@ -54,7 +54,7 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 
 ### Logging conventions
 
-- Prefix messages with the module name (e.g., `app`, `cli`, `translator`).
+- Rely on the logger's name (`%(name)s`) for module context; do **not** repeat it in the message.
 - Begin messages with a lowercase action verb.
 - Express context as `key=value` pairs.
 

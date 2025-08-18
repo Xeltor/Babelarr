@@ -27,15 +27,15 @@ def validate_environment(config: Config) -> None:
     for d in config.root_dirs:
         path = Path(d)
         if not path.is_dir():
-            logger.warning("cli: missing_watch_dir path=%s", d)
+            logger.warning("missing_watch_dir path=%s", d)
             continue
         if not os.access(path, os.R_OK):
-            logger.warning("cli: unreadable_watch_dir path=%s", d)
+            logger.warning("unreadable_watch_dir path=%s", d)
             continue
         valid_dirs.append(d)
 
     if not valid_dirs:
-        logger.error("cli: no_readable_dirs dirs=%s", config.root_dirs)
+        logger.error("no_readable_dirs dirs=%s", config.root_dirs)
         raise SystemExit("No valid watch directories configured")
 
     config.root_dirs = valid_dirs
@@ -45,7 +45,7 @@ def validate_environment(config: Config) -> None:
         if resp.status_code >= 400:
             raise requests.RequestException(f"HTTP {resp.status_code}")
     except requests.RequestException as exc:
-        logger.error("cli: service_unreachable url=%s error=%s", config.api_url, exc)
+        logger.error("service_unreachable url=%s error=%s", config.api_url, exc)
 
 
 def filter_target_languages(config: Config, translator: LibreTranslateClient) -> None:
@@ -59,17 +59,17 @@ def filter_target_languages(config: Config, translator: LibreTranslateClient) ->
     try:
         translator.ensure_languages()
     except ValueError as exc:
-        logger.error("cli: language_error detail=%s", exc)
+        logger.error("language_error detail=%s", exc)
         raise SystemExit(str(exc))
     except requests.RequestException as exc:  # pragma: no cover - network failure
-        logger.error("cli: fetch_languages_failed error=%s", exc)
+        logger.error("fetch_languages_failed error=%s", exc)
         return
 
     supported = translator.supported_targets or set()
     unsupported = [lang for lang in config.target_langs if lang not in supported]
     if unsupported:
         logger.warning(
-            "cli: unsupported_targets langs=%s",
+            "unsupported_targets langs=%s",
             ", ".join(unsupported),
         )
         config.target_langs = [
@@ -77,7 +77,7 @@ def filter_target_languages(config: Config, translator: LibreTranslateClient) ->
         ]
 
     if not config.target_langs:
-        logger.error("cli: no_supported_targets")
+        logger.error("no_supported_targets")
         raise SystemExit("No supported target languages configured")
 
 
@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> None:
     app = Application(config, translator)
 
     def handle_signal(signum, frame):
-        logger.info("cli: received_signal signum=%s", signum)
+        logger.info("received_signal signum=%s", signum)
         app.shutdown_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
