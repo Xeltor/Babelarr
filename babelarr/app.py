@@ -87,7 +87,7 @@ class SrtHandler(PatternMatchingEventHandler):
             if new_size == size:
                 return True
             if time.monotonic() - start > self._max_wait:
-                logger.warning("Timeout waiting for %s to stabilize", path)
+                logger.warning("app: timeout_stabilize path=%s", path)
                 return False
 
     def _handle(self, path: Path) -> None:
@@ -99,7 +99,7 @@ class SrtHandler(PatternMatchingEventHandler):
 
         last = self._recent.get(path)
         if last and now - last < self._debounce:
-            logger.debug("Skipping %s; handled %.2fs ago", path, now - last)
+            logger.debug("app: skip_recent path=%s age=%.2fs", path, now - last)
             return
 
         if self._wait_for_complete(path):
@@ -107,11 +107,11 @@ class SrtHandler(PatternMatchingEventHandler):
             self.app.enqueue(path)
 
     def on_created(self, event):
-        logger.debug("Detected new file %s", event.src_path)
+        logger.debug("app: detect_new path=%s", event.src_path)
         self._handle(Path(event.src_path))
 
     def on_deleted(self, event):
-        logger.debug("Detected deleted file %s", event.src_path)
+        logger.debug("app: detect_deleted path=%s", event.src_path)
         self.app.db.remove(Path(event.src_path))
 
     def on_modified(self, event):
@@ -120,7 +120,7 @@ class SrtHandler(PatternMatchingEventHandler):
 
     def on_moved(self, event):
         dest = Path(event.dest_path)
-        logger.debug("Detected moved file %s -> %s", event.src_path, dest)
+        logger.debug("app: detect_move src=%s dest=%s", event.src_path, dest)
         self._handle(dest)
 
 
@@ -155,14 +155,14 @@ class Application:
         """
 
         tlog = TranslationLogger(src, lang, task_id)
-        tlog.debug("Translating")
+        tlog.debug("app: translating")
         content = self.translator.translate(src, lang)
         if not src.exists():
-            tlog.warning("Source disappeared during translation; skipping")
+            tlog.warning("app: skip reason=source_missing")
             return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
-        tlog.debug("saved -> %s", output)
+        tlog.debug("app: save output=%s", output)
         return True
 
     def _get_task(self) -> TranslationTask | None:
@@ -176,9 +176,9 @@ class Application:
         path, lang, task_id = task.path, task.lang, task.task_id
         tlog = TranslationLogger(path, lang, task_id)
         if path.exists():
-            tlog.debug("Worker %s translating", worker_name)
+            tlog.debug("app: worker_translate name=%s", worker_name)
             return self.translate_file(path, lang, task_id)
-        tlog.warning("Worker %s missing", worker_name)
+        tlog.warning("app: worker_missing name=%s", worker_name)
         return False
 
     def _handle_failure(
@@ -190,8 +190,8 @@ class Application:
     ) -> bool:
         path, lang, task_id = task.path, task.lang, task.task_id
         tlog = TranslationLogger(path, lang, task_id)
-        tlog.error("Worker %s translation failed: %s", worker_name, exc)
-        tlog.debug("Traceback:", exc_info=True)
+        tlog.error("app: translation_failed name=%s error=%s", worker_name, exc)
+        tlog.debug("app: traceback", exc_info=True)
         if isinstance(exc, requests.RequestException):
             self.translator_available.clear()
             if callable(wait):
@@ -202,7 +202,7 @@ class Application:
 
     def worker(self):
         name = threading.current_thread().name
-        logger.debug("Worker %s starting", name)
+        logger.debug("app: worker_start name=%s", name)
         wait = getattr(self.translator, "wait_until_available", None)
         if callable(wait):
             wait()
@@ -217,7 +217,7 @@ class Application:
                 path, lang, task_id = task.path, task.lang, task.task_id
                 tlog = TranslationLogger(path, lang, task_id)
                 start_time = time.monotonic()
-                tlog.debug("Worker %s picked up", name)
+                tlog.debug("app: worker_pickup name=%s", name)
                 try:
                     success = self._process_translation(task, name)
                     requeue = False
@@ -231,21 +231,21 @@ class Application:
                     self.tasks.put((task.priority, self._task_counter, task))
                     self._task_counter += 1
                     tlog.info(
-                        "Worker %s requeued (queue length: %d)",
+                        "app: worker_requeue name=%s queue=%d",
                         name,
                         self.db.count(),
                     )
                 else:
                     self.db.remove(path, lang)
                     tlog.info(
-                        "translation %s in %.2fs (queue length: %d)",
+                        "app: translation outcome=%s duration=%.2fs queue=%d",
                         outcome,
                         elapsed,
                         self.db.count(),
                     )
                 self.tasks.task_done()
                 tlog.debug(
-                    "Worker %s finished processing in %.2fs",
+                    "app: worker_finish name=%s duration=%.2fs",
                     name,
                     elapsed,
                 )
@@ -254,7 +254,7 @@ class Application:
                 self._active_workers -= 1
                 self._worker_threads.discard(threading.current_thread())
                 logger.info(
-                    "Worker %s exiting (active workers: %d)",
+                    "app: worker_exit name=%s active=%d",
                     name,
                     self._active_workers,
                 )
@@ -264,7 +264,7 @@ class Application:
         return not out.exists()
 
     def enqueue(self, path: Path, *, priority: int = 0):
-        TranslationLogger(path).debug("Attempting to enqueue")
+        TranslationLogger(path).debug("app: enqueue_attempt")
         if not path.is_file() or not path.name.lower().endswith(
             self.config.src_ext.lower()
         ):
@@ -274,7 +274,8 @@ class Application:
             tlog = TranslationLogger(path, lang)
             if not self.needs_translation(path, lang):
                 tlog.debug(
-                    "Translation already exists: %s", self.output_path(path, lang)
+                    "app: translation_exists output=%s",
+                    self.output_path(path, lang),
                 )
                 continue
             if self.db.add(path, lang, priority):
@@ -285,13 +286,13 @@ class Application:
                 self._task_counter += 1
                 self._ensure_workers()
                 TranslationLogger(path, lang, task_id).info(
-                    "queued (queue length: %d)",
+                    "app: queued queue=%d",
                     self.db.count(),
                 )
             else:
-                tlog.debug("already queued")
+                tlog.debug("app: already_queued")
         if not queued_any:
-            TranslationLogger(path).debug("All translations present; skipping")
+            TranslationLogger(path).debug("app: skip reason=all_present")
 
     def request_scan(self) -> None:
         """Enqueue a full directory scan to be handled by the scanner thread."""
@@ -300,7 +301,7 @@ class Application:
     def scan_worker(self) -> None:
         """Background worker that performs full filesystem scans."""
         name = threading.current_thread().name
-        logger.debug("Scan worker %s starting", name)
+        logger.debug("app: scan_worker_start name=%s", name)
         while not self.shutdown_event.is_set():
             try:
                 self.scan_queue.get(timeout=0.1)
@@ -310,45 +311,46 @@ class Application:
                 self.full_scan()
             finally:
                 self.scan_queue.task_done()
-        logger.debug("Scan worker %s exiting", name)
+        logger.debug("app: scan_worker_exit name=%s", name)
 
     def full_scan(self):
-        logger.info("Performing full scan")
+        logger.info("app: scan_start")
         total = 0
         for root in self.config.root_dirs:
-            logger.debug("Scanning %s", root)
+            logger.debug("app: scan path=%s", root)
             for file in Path(root).rglob(f"*{self.config.src_ext}"):
                 total += 1
                 self.enqueue(file, priority=1)
-        logger.info("Full scan complete: %d files found", total)
+        logger.info("app: scan_complete files=%d", total)
 
     def load_pending(self):
-        logger.info("Loading pending tasks")
+        logger.info("app: load_pending")
         for path, lang, priority in self.db.all():
             task = TranslationTask(path, lang, uuid4().hex, priority)
             self.tasks.put((priority, self._task_counter, task))
             self._task_counter += 1
-            logger.info("restored %s to %s id=%s", path.name, lang, task.task_id)
+            tlog = TranslationLogger(path, lang, task.task_id)
+            tlog.info("app: restored")
             self._ensure_workers()
 
     def watch(self):
         observer = Observer()
         for root in self.config.root_dirs:
-            logger.debug("Watching %s", root)
+            logger.debug("app: watch path=%s", root)
             root_path = Path(root)
             if not root_path.exists():
-                logger.warning("Directory %s does not exist; skipping", root_path)
+                logger.warning("app: missing_directory path=%s", root_path)
                 continue
             observer.schedule(SrtHandler(self), root, recursive=True)
         observer.start()
-        logger.info("Observer started")
+        logger.info("app: observer_started")
         try:
             while not self.shutdown_event.is_set():
                 time.sleep(1)
         finally:
             observer.stop()
             observer.join()
-            logger.info("Observer stopped")
+            logger.info("app: observer_stopped")
 
     def run(self):
         self.load_pending()
@@ -360,13 +362,13 @@ class Application:
 
         watcher = threading.Thread(target=self.watch, name="watcher")
         watcher.start()
-        logger.info("Service started")
+        logger.info("app: service_started")
 
         while not self.shutdown_event.is_set():
             schedule.run_pending()
             time.sleep(1)
 
-        logger.info("Shutdown initiated")
+        logger.info("app: shutdown_initiated")
         watcher.join()
         if self._scan_thread:
             self._scan_thread.join()
@@ -376,7 +378,7 @@ class Application:
         close = getattr(self.translator, "close", None)
         if callable(close):
             close()
-        logger.info("Shutdown complete")
+        logger.info("app: shutdown_complete")
 
     def _ensure_workers(self) -> None:
         with self._worker_lock:
