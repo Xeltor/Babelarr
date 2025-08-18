@@ -324,14 +324,17 @@ class Application:
         logger.info("scan_complete files=%d", total)
 
     def load_pending(self):
-        logger.info("load_pending")
+        logger.debug("load_pending")
+        restored = 0
         for path, lang, priority in self.db.all():
             task = TranslationTask(path, lang, uuid4().hex, priority)
             self.tasks.put((priority, self._task_counter, task))
             self._task_counter += 1
             tlog = TranslationLogger(path, lang, task.task_id)
-            tlog.info("restored")
+            tlog.debug("restored")
             self._ensure_workers()
+            restored += 1
+        logger.info("load_pending restored=%d", restored)
 
     def watch(self):
         observer = Observer()
