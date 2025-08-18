@@ -149,3 +149,26 @@ def test_translate_download(monkeypatch, tmp_path):
     client.close()
 
     assert result == b"translated"
+
+
+def test_ensure_languages_logs_count(monkeypatch, caplog):
+    client = LibreTranslateClient("http://example", "en")
+    monkeypatch.setattr(
+        client.api,
+        "fetch_languages",
+        lambda: [{"code": "en", "targets": ["nl", "es"]}],
+    )
+    with caplog.at_level(logging.INFO):
+        client.ensure_languages()
+    assert "translator: languages_loaded count=2" in caplog.text
+
+
+def test_wait_until_available_logs_service_available(monkeypatch, caplog):
+    client = LibreTranslateClient(
+        "http://example", "en", availability_check_interval=0.1
+    )
+    monkeypatch.setattr(client, "is_available", lambda: True)
+    monkeypatch.setattr(client, "ensure_languages", lambda: None)
+    with caplog.at_level(logging.INFO):
+        client.wait_until_available()
+    assert "translator: service_available" in caplog.text
