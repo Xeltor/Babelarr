@@ -92,13 +92,13 @@ def test_main_sets_urllib3_logger_to_warning(monkeypatch):
     assert logging.getLogger("urllib3").level == logging.WARNING
 
 
-def test_log_level_debug_enables_debug_output(tmp_path, monkeypatch, capsys):
+def test_log_level_debug_logs_configuration(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
     logging.getLogger().handlers.clear()
     logging.getLogger().setLevel(logging.NOTSET)
     cli.main(["--log-level", "DEBUG", "queue"])
     captured = capsys.readouterr()
-    assert "Config:" in captured.err
+    assert "loaded config" in captured.err
 
 
 def test_log_file_option_creates_file(tmp_path, monkeypatch):

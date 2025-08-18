@@ -182,11 +182,11 @@ class Config:
         scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
 
-        logger.debug(
-            "Config: ROOT_DIRS=%s TARGET_LANGS=%s SRC_LANG=%s API_URL=%s "
-            "WORKERS=%s QUEUE_DB=%s API_KEY_SET=%s RETRY_COUNT=%s "
-            "BACKOFF_DELAY=%s AVAILABILITY_CHECK_INTERVAL=%s DEBOUNCE=%s SCAN_INTERVAL_MINUTES=%s "
-            "PERSISTENT_SESSIONS=%s",
+        logger.info(
+            "loaded config root_dirs=%s target_langs=%s src_lang=%s api_url=%s "
+            "workers=%s queue_db=%s api_key_set=%s retry_count=%s "
+            "backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
+            "persistent_sessions=%s",
             root_dirs,
             target_langs,
             src_lang,
