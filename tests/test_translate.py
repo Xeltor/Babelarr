@@ -45,7 +45,12 @@ def test_translate_file_errors(tmp_path, status, caplog, app):
 
         def translate(self, path, lang):
             logger = logging.getLogger("babelarr")
-            logger.error("HTTP %s from LibreTranslate: boom", self.status_code)
+            logger.error(
+                "HTTP error from LibreTranslate status=%s detail=boom headers=%s body=%s",
+                self.status_code,
+                {},
+                "",
+            )
             resp = requests.Response()
             resp.status_code = self.status_code
             raise requests.HTTPError(response=resp)
@@ -55,7 +60,8 @@ def test_translate_file_errors(tmp_path, status, caplog, app):
     with caplog.at_level(logging.ERROR):
         with pytest.raises(requests.HTTPError):
             app_instance.translate_file(tmp_file, "nl")
-        assert str(status) in caplog.text
+        assert f"status={status}" in caplog.text
+        assert "detail=boom" in caplog.text
 
 
 def test_retry_success(monkeypatch, tmp_path, caplog):
