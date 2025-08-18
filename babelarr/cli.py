@@ -11,7 +11,7 @@ from .config import Config
 from .queue_db import QueueRepository
 from .translator import LibreTranslateClient
 
-logger = logging.getLogger("babelarr")
+logger = logging.getLogger(__name__)
 
 
 def validate_environment(config: Config) -> None:
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(
         level=log_level,
         filename=log_file,
-        format="%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s",
+        format="%(asctime)s [%(levelname)s] [%(name)s] [%(threadName)s] %(message)s",
     )
     logging.getLogger("watchdog").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.WARNING)

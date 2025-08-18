@@ -16,7 +16,7 @@ from .config import Config
 from .queue_db import QueueRepository
 from .translator import Translator
 
-logger = logging.getLogger("babelarr")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

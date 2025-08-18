@@ -12,7 +12,7 @@ import requests
 
 from .libretranslate_api import LibreTranslateAPI
 
-logger = logging.getLogger("babelarr")
+logger = logging.getLogger(__name__)
 
 ERROR_MESSAGES = {
     400: "Bad Request",
