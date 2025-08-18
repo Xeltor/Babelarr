@@ -111,6 +111,46 @@ def test_log_file_option_creates_file(tmp_path, monkeypatch):
     assert log_file.read_text() != ""
 
 
+def test_main_logs_start_and_config_loaded(monkeypatch, caplog):
+    config = Config(
+        root_dirs=["/tmp"],
+        target_langs=["nl"],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=":memory:",
+    )
+
+    monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(cli, "validate_environment", lambda cfg: None)
+    monkeypatch.setattr(cli, "filter_target_languages", lambda cfg, translator: None)
+
+    class DummyApp:
+        def __init__(self, *args, **kwargs):
+            self.shutdown_event = types.SimpleNamespace(set=lambda: None)
+
+        def run(self):
+            return None
+
+    monkeypatch.setattr(cli, "Application", DummyApp)
+
+    class DummyTranslator:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def ensure_languages(self):
+            return None
+
+    monkeypatch.setattr(cli, "LibreTranslateClient", DummyTranslator)
+
+    with caplog.at_level(logging.INFO):
+        cli.main([])
+
+    assert "cli: start log_level=INFO log_file=None" in caplog.text
+    assert "cli: config_loaded api_url=http://example targets=['nl']" in caplog.text
+
+
 def test_queue_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
     db_path = tmp_path / "queue.db"
     with QueueRepository(str(db_path)) as repo:
@@ -159,6 +199,27 @@ def test_queue_outputs_count(tmp_path, monkeypatch, capsys):
     assert out == ["2 pending items"]
 
 
+def test_validate_environment_logs_environment_ready(tmp_path, monkeypatch, caplog):
+    config = Config(
+        root_dirs=[str(tmp_path)],
+        target_langs=["nl"],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=":memory:",
+    )
+
+    class DummyResp:
+        status_code = 200
+
+    monkeypatch.setattr(cli.requests, "head", lambda url, timeout: DummyResp())
+
+    with caplog.at_level(logging.INFO):
+        cli.validate_environment(config)
+        assert "cli: environment_ready" in caplog.text
+
+
 def test_filter_target_languages_removes_unsupported(caplog):
     config = Config(
         root_dirs=["/tmp"],
@@ -179,10 +240,11 @@ def test_filter_target_languages_removes_unsupported(caplog):
 
     translator = DummyTranslator()
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         cli.filter_target_languages(config, translator)
         assert config.target_langs == ["nl"]
         assert "unsupported_targets" in caplog.text
+        assert "cli: target_langs langs=nl" in caplog.text
 
 
 def test_filter_target_languages_exits_when_none_supported():
