@@ -43,7 +43,7 @@ def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
     with caplog.at_level(logging.INFO):
         app_instance.full_scan()
 
-    assert "app: scan_complete files=2" in caplog.text
+    assert "scan_complete files=2" in caplog.text
 
 
 def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
@@ -238,7 +238,7 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and rec.message.startswith("app: worker_finish")
+        and rec.message.startswith("worker_finish")
         and f"path={src}" in rec.message
         and "lang=nl" in rec.message
         and "task_id=" in rec.message
@@ -262,7 +262,7 @@ def test_worker_translating_logged_as_debug(tmp_path, caplog, app):
 
     assert any(
         rec.levelno == logging.DEBUG
-        and rec.message.startswith("app: worker_translate")
+        and rec.message.startswith("worker_translate")
         and "name=worker_0" in rec.message
         for rec in caplog.records
     )
@@ -289,7 +289,7 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
     info_logs = [
         rec
         for rec in caplog.records
-        if rec.levelno == logging.INFO and rec.message.startswith("app: translation ")
+        if rec.levelno == logging.INFO and rec.message.startswith("translation ")
     ]
     assert len(info_logs) == 1
     msg = info_logs[0].message
