@@ -167,7 +167,14 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
 
     with caplog.at_level(logging.INFO):
         app_instance.enqueue(sub_file)
-        assert "queue length: 1" in caplog.text
+        queued_logs = [r for r in caplog.records if r.levelno == logging.INFO]
+        assert any("queue length: 1" in r.message for r in queued_logs)
+        assert any(
+            f"path={sub_file}" in r.message
+            and "lang=nl" in r.message
+            and "task_id=" in r.message
+            for r in queued_logs
+        )
         caplog.clear()
 
         with ThreadPoolExecutor(max_workers=1) as executor:
@@ -175,7 +182,11 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
             app_instance.tasks.join()
             app_instance.shutdown_event.set()
 
-        assert "queue length: 0" in caplog.text
+        done_logs = [r for r in caplog.records if "queue length: 0" in r.message]
+        assert any(
+            f"path={sub_file}" in r.message and "lang=nl" in r.message
+            for r in done_logs
+        )
     assert app_instance.db.all() == []
 
 
@@ -227,8 +238,9 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     assert any(
         rec.levelno == logging.DEBUG
         and "finished processing" in rec.message.lower()
-        and str(src) in rec.message
-        and "[nl]" in rec.message
+        and f"path={src}" in rec.message
+        and "lang=nl" in rec.message
+        and "task_id=" in rec.message
         for rec in caplog.records
     )
 
@@ -280,9 +292,9 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
     ]
     assert len(info_logs) == 1
     msg = info_logs[0].message
-    assert src.name in msg
-    assert str(src) not in msg
-    assert "nl" in msg
+    assert f"path={src}" in msg
+    assert "lang=nl" in msg
+    assert "task_id=" in msg
     assert "succeeded" in msg
     assert re.search(r"in \d+\.\d+s", msg)
 

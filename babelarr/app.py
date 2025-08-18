@@ -2,9 +2,10 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import requests
@@ -17,6 +18,34 @@ from .queue_db import QueueRepository
 from .translator import Translator
 
 logger = logging.getLogger(__name__)
+
+
+class TranslationLogger(logging.LoggerAdapter):
+    """Logger adapter that appends translation context."""
+
+    def __init__(
+        self,
+        path: Path | None = None,
+        lang: str | None = None,
+        task_id: str | None = None,
+    ) -> None:
+        extra = {"path": path, "lang": lang, "task_id": task_id}
+        super().__init__(logger, extra)
+
+    def process(
+        self, msg: str, kwargs: MutableMapping[str, Any]
+    ) -> tuple[str, MutableMapping[str, Any]]:
+        source = self.extra or {}
+        extra: dict[str, Any] = {k: v for k, v in source.items() if v is not None}
+        supplied = kwargs.get("extra")
+        if isinstance(supplied, Mapping):
+            for k, v in supplied.items():
+                if v is not None:
+                    extra[k] = v
+        kwargs["extra"] = extra
+        if extra:
+            msg = f"{msg} " + " ".join(f"{k}={v}" for k, v in extra.items())
+        return msg, kwargs
 
 
 @dataclass(frozen=True)
@@ -125,19 +154,15 @@ class Application:
         produced.
         """
 
-        prefix = f"[{task_id}] " if task_id else ""
-        logger.debug("%sTranslating %s to %s", prefix, src, lang)
+        tlog = TranslationLogger(src, lang, task_id)
+        tlog.debug("Translating")
         content = self.translator.translate(src, lang)
         if not src.exists():
-            logger.warning(
-                "%sSource %s disappeared during translation; skipping",
-                prefix,
-                src,
-            )
+            tlog.warning("Source disappeared during translation; skipping")
             return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
-        logger.debug("%s[%s] saved -> %s", prefix, lang, output)
+        tlog.debug("saved -> %s", output)
         return True
 
     def _get_task(self) -> TranslationTask | None:
@@ -149,14 +174,11 @@ class Application:
 
     def _process_translation(self, task: TranslationTask, worker_name: str) -> bool:
         path, lang, task_id = task.path, task.lang, task.task_id
+        tlog = TranslationLogger(path, lang, task_id)
         if path.exists():
-            logger.debug(
-                "Worker %s translating %s to %s id=%s", worker_name, path, lang, task_id
-            )
+            tlog.debug("Worker %s translating", worker_name)
             return self.translate_file(path, lang, task_id)
-        logger.warning(
-            "Worker %s missing %s, skipping id=%s", worker_name, path, task_id
-        )
+        tlog.warning("Worker %s missing", worker_name)
         return False
 
     def _handle_failure(
@@ -167,15 +189,9 @@ class Application:
         wait: Callable[[], None] | None,
     ) -> bool:
         path, lang, task_id = task.path, task.lang, task.task_id
-        logger.error(
-            "Worker %s translation failed for %s to %s id=%s: %s",
-            worker_name,
-            path,
-            lang,
-            task_id,
-            exc,
-        )
-        logger.debug("Traceback:", exc_info=True)
+        tlog = TranslationLogger(path, lang, task_id)
+        tlog.error("Worker %s translation failed: %s", worker_name, exc)
+        tlog.debug("Traceback:", exc_info=True)
         if isinstance(exc, requests.RequestException):
             self.translator_available.clear()
             if callable(wait):
@@ -199,10 +215,9 @@ class Application:
                 if task is None:
                     break
                 path, lang, task_id = task.path, task.lang, task.task_id
+                tlog = TranslationLogger(path, lang, task_id)
                 start_time = time.monotonic()
-                logger.debug(
-                    "Worker %s picked up %s [%s] id=%s", name, path, lang, task_id
-                )
+                tlog.debug("Worker %s picked up", name)
                 try:
                     success = self._process_translation(task, name)
                     requeue = False
@@ -215,31 +230,23 @@ class Application:
                 if requeue:
                     self.tasks.put((task.priority, self._task_counter, task))
                     self._task_counter += 1
-                    logger.info(
-                        "Worker %s requeued %s to %s id=%s for later processing (queue length: %d)",
+                    tlog.info(
+                        "Worker %s requeued (queue length: %d)",
                         name,
-                        path.name,
-                        lang,
-                        task_id,
                         self.db.count(),
                     )
                 else:
                     self.db.remove(path, lang)
-                    logger.info(
-                        "translation %s to %s %s in %.2fs (queue length: %d)",
-                        path.name,
-                        lang,
+                    tlog.info(
+                        "translation %s in %.2fs (queue length: %d)",
                         outcome,
                         elapsed,
                         self.db.count(),
                     )
                 self.tasks.task_done()
-                logger.debug(
-                    "Worker %s finished processing %s [%s] id=%s in %.2fs",
+                tlog.debug(
+                    "Worker %s finished processing in %.2fs",
                     name,
-                    path,
-                    lang,
-                    task_id,
                     elapsed,
                 )
         finally:
@@ -257,15 +264,16 @@ class Application:
         return not out.exists()
 
     def enqueue(self, path: Path, *, priority: int = 0):
-        logger.debug("Attempting to enqueue %s", path)
+        TranslationLogger(path).debug("Attempting to enqueue")
         if not path.is_file() or not path.name.lower().endswith(
             self.config.src_ext.lower()
         ):
             return
         queued_any = False
         for lang in self.config.target_langs:
+            tlog = TranslationLogger(path, lang)
             if not self.needs_translation(path, lang):
-                logger.debug(
+                tlog.debug(
                     "Translation already exists: %s", self.output_path(path, lang)
                 )
                 continue
@@ -276,17 +284,14 @@ class Application:
                 self.tasks.put((priority, self._task_counter, task))
                 self._task_counter += 1
                 self._ensure_workers()
-                logger.info(
-                    "queued %s to %s id=%s (queue length: %d)",
-                    path,
-                    lang,
-                    task_id,
+                TranslationLogger(path, lang, task_id).info(
+                    "queued (queue length: %d)",
                     self.db.count(),
                 )
             else:
-                logger.debug("%s to %s already queued", path, lang)
+                tlog.debug("already queued")
         if not queued_any:
-            logger.debug("All translations present for %s; skipping", path)
+            TranslationLogger(path).debug("All translations present; skipping")
 
     def request_scan(self) -> None:
         """Enqueue a full directory scan to be handled by the scanner thread."""
