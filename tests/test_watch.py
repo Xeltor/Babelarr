@@ -149,27 +149,28 @@ def test_srt_handler_debounce(monkeypatch, tmp_path, app):
 
     def fake_enqueue(p):
         called["path"] = p
+        called["content"] = p.read_text()
 
     monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
 
     handler = SrtHandler(app_instance)
 
-    import threading
-    import time
+    appended = False
 
-    def append_later():
-        time.sleep(0.005)
-        with path.open("a") as fh:
-            fh.write("part2")
+    def fake_sleep(seconds):
+        nonlocal appended
+        if not appended:
+            with path.open("a") as fh:
+                fh.write("part2")
+            appended = True
 
-    t = threading.Thread(target=append_later)
-    t.start()
+    monkeypatch.setattr(app_module.time, "sleep", fake_sleep)
+
     event = FileCreatedEvent(str(path))
     handler.dispatch(event)
-    t.join()
 
     assert called["path"] == path
-    assert path.read_text() == "part1part2"
+    assert called["content"] == "part1part2"
 
 
 def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
