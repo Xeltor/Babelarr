@@ -75,11 +75,6 @@ class Application:
         output = self.output_path(src, lang)
         output.write_bytes(content)
         tlog.debug("save output=%s", output.name)
-        if self.jellyfin:
-            try:
-                self.jellyfin.refresh_path(output)
-            except Exception as exc:  # noqa: BLE001
-                tlog.error("jellyfin_refresh_failed error=%s", exc)
         return True
 
     def needs_translation(self, path: Path, lang: str) -> bool:
@@ -102,7 +97,8 @@ class Application:
             del self.pending_translations[path]
         if self.jellyfin:
             try:
-                self.jellyfin.refresh_path(path.with_suffix(""))
+                stem = path.name.removesuffix(self.config.src_ext)
+                self.jellyfin.refresh_path(path.with_name(stem))
             except Exception as exc:  # noqa: BLE001
                 TranslationLogger(path, lang).error(
                     "jellyfin_refresh_failed error=%s", exc
