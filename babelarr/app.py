@@ -96,11 +96,13 @@ class Application:
                 return
             del self.pending_translations[path]
         if self.jellyfin:
+            stem = path.name.removesuffix(self.config.src_ext)
+            refresh_path = path.with_name(stem)
             try:
-                stem = path.name.removesuffix(self.config.src_ext)
-                self.jellyfin.refresh_path(path.with_name(stem))
+                self.jellyfin.refresh_path(refresh_path)
+                TranslationLogger(refresh_path, lang).info("trigger_jellyfin_scan")
             except Exception as exc:  # noqa: BLE001
-                TranslationLogger(path, lang).error(
+                TranslationLogger(refresh_path, lang).error(
                     "jellyfin_refresh_failed error=%s", exc
                 )
 
