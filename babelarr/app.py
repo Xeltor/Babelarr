@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 class Application:
     def __init__(self, config: Config, translator: Translator):
+        """Create an application coordinator.
+
+        Initializes queues and thread primitives; call once at startup.
+        """
         self.config = config
         self.translator = translator
         self.tasks: queue.PriorityQueue[tuple[int, int, TranslationTask]] = (
@@ -38,15 +42,19 @@ class Application:
         self._scan_thread: threading.Thread | None = None
 
     def output_path(self, src: Path, lang: str) -> Path:
+        """Return translation output path for *src* and *lang*.
+
+        Pure helper safe for concurrent use.
+        """
         stem = src.name.removesuffix(self.config.src_ext)
         return src.with_name(f"{stem}.{lang}.srt")
 
     def translate_file(self, src: Path, lang: str, task_id: str | None = None) -> bool:
         """Translate *src* into *lang*.
 
-        Returns ``True`` if the translated output was written to disk, ``False``
-        if the source file disappeared mid-translation and no output was
-        produced.
+        Runs in worker threads and blocks on network and disk I/O. Returns
+        ``True`` if the translated output was written, ``False`` if the source
+        disappears during translation.
         """
 
         tlog = TranslationLogger(src, lang, task_id)
@@ -61,10 +69,18 @@ class Application:
         return True
 
     def needs_translation(self, path: Path, lang: str) -> bool:
+        """Return ``True`` if *path* lacks a translation for *lang*.
+
+        Performs a filesystem check and is thread-safe.
+        """
         out = self.output_path(path, lang)
         return not out.exists()
 
     def enqueue(self, path: Path, *, priority: int = 0) -> None:
+        """Queue *path* for translation with the given *priority*.
+
+        Thread-safe; may block briefly when interacting with the task queue.
+        """
         TranslationLogger(path).debug("enqueue_attempt")
         if not path.is_file() or not path.name.lower().endswith(
             self.config.src_ext.lower()
@@ -96,11 +112,17 @@ class Application:
             TranslationLogger(path).debug("skip reason=all_present")
 
     def request_scan(self) -> None:
-        """Enqueue a full directory scan to be handled by the scanner thread."""
+        """Signal the scanner thread to perform a full directory scan.
+
+        Non-blocking and safe to call from any thread.
+        """
         self.scan_queue.put(None)
 
     def scan_worker(self) -> None:
-        """Background worker that performs full filesystem scans."""
+        """Background worker that performs full filesystem scans.
+
+        Runs in a dedicated thread and exits when ``shutdown_event`` is set.
+        """
         name = threading.current_thread().name
         logger.debug("scan_worker_start name=%s", name)
         while not self.shutdown_event.is_set():
@@ -115,6 +137,10 @@ class Application:
         logger.debug("scan_worker_exit name=%s", name)
 
     def full_scan(self) -> None:
+        """Recursively scan roots and enqueue missing translations.
+
+        Blocking operation intended for the scanner thread.
+        """
         logger.info("scan_start")
         total = 0
         for root in self.config.root_dirs:
@@ -125,6 +151,10 @@ class Application:
         logger.info("scan_complete files=%d", total)
 
     def load_pending(self) -> None:
+        """Restore queued tasks from the persistent repository.
+
+        Should run before worker threads start; blocks on database access.
+        """
         logger.debug("load_pending")
         restored = 0
         for path, lang, priority in self.db.all():
@@ -138,6 +168,11 @@ class Application:
         logger.info("load_pending restored=%d", restored)
 
     def run(self) -> None:
+        """Run the service until shutdown.
+
+        Starts worker, watcher, and scanner threads and blocks until
+        ``shutdown_event`` is set.
+        """
         self.load_pending()
         self.request_scan()
         schedule.every(self.config.scan_interval_minutes).minutes.do(self.request_scan)
@@ -168,6 +203,10 @@ class Application:
         logger.info("shutdown_complete")
 
     def _ensure_workers(self) -> None:
+        """Spawn worker threads up to the configured limit.
+
+        Thread-safe via an internal lock.
+        """
         with self._worker_lock:
             needed = min(self.tasks.qsize(), self.config.workers) - self._active_workers
             for _ in range(needed):
