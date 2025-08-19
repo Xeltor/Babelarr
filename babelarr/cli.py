@@ -8,6 +8,7 @@ import requests
 
 from .app import Application
 from .config import Config
+from .jellyfin_api import JellyfinClient
 from .queue_db import QueueRepository
 from .translator import LibreTranslateClient
 
@@ -142,7 +143,10 @@ def main(argv: list[str] | None = None) -> None:
         persistent_session=config.persistent_sessions,
     )
     filter_target_languages(config, translator)
-    app = Application(config, translator)
+    jellyfin_client = None
+    if config.jellyfin_url and config.jellyfin_token:
+        jellyfin_client = JellyfinClient(config.jellyfin_url, config.jellyfin_token)
+    app = Application(config, translator, jellyfin_client)
 
     def handle_signal(signum, frame):
         logger.info("received_signal signum=%s", signum)

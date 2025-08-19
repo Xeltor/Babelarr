@@ -34,10 +34,10 @@ def config(tmp_path):
 def app(config):
     instances = []
 
-    def _create_app(*, translator=None, cfg=None):
+    def _create_app(*, translator=None, cfg=None, jellyfin=None):
         cfg = cfg or config
         translator = translator or _DummyTranslator()
-        instance = Application(cfg, translator)
+        instance = Application(cfg, translator, jellyfin)
         instances.append(instance)
         return instance
 

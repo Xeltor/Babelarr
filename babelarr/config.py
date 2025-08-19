@@ -21,6 +21,8 @@ class Config:
         workers: Number of translation worker threads.
         queue_db: Path to the SQLite queue database.
         api_key: Optional API key for authenticated requests.
+        jellyfin_url: Base URL of the Jellyfin server.
+        jellyfin_token: API token for Jellyfin.
         retry_count: Translation retry attempts.
         backoff_delay: Initial backoff delay between retries.
         debounce: Seconds to wait for file changes to settle before enqueueing.
@@ -35,6 +37,8 @@ class Config:
     workers: int
     queue_db: str
     api_key: str | None = None
+    jellyfin_url: str | None = None
+    jellyfin_token: str | None = None
     retry_count: int = 3
     backoff_delay: float = 1.0
     availability_check_interval: float = 30.0
@@ -153,6 +157,8 @@ class Config:
         queue_db = str(queue_db_path)
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
+        jellyfin_url = os.environ.get("JELLYFIN_URL") or None
+        jellyfin_token = os.environ.get("JELLYFIN_TOKEN") or None
 
         parsers: dict[str, Callable[[str | None], Any]] = {
             "TARGET_LANGS": cls._parse_target_languages,
@@ -184,8 +190,8 @@ class Config:
 
         logger.info(
             "loaded config root_dirs=%s target_langs=%s src_lang=%s api_url=%s "
-            "workers=%s queue_db=%s api_key_set=%s retry_count=%s "
-            "backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
+            "workers=%s queue_db=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
+            "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
             "persistent_sessions=%s",
             root_dirs,
             target_langs,
@@ -194,6 +200,8 @@ class Config:
             workers,
             queue_db,
             bool(api_key),
+            jellyfin_url,
+            bool(jellyfin_token),
             retry_count,
             backoff_delay,
             availability_check_interval,
@@ -211,6 +219,8 @@ class Config:
             workers=workers,
             queue_db=queue_db,
             api_key=api_key,
+            jellyfin_url=jellyfin_url,
+            jellyfin_token=jellyfin_token,
             retry_count=retry_count,
             backoff_delay=backoff_delay,
             availability_check_interval=availability_check_interval,
