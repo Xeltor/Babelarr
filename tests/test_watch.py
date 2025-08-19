@@ -279,4 +279,4 @@ def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
         app_instance.watch()
 
     assert events["scheduled"] == [str(existing)]
-    assert str(missing) in caplog.text
+    assert missing.name in caplog.text

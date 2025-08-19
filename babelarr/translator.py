@@ -137,7 +137,7 @@ class LibreTranslateClient:
             )
             try:
                 tmp.write(resp.content)
-                logger.debug("save_error_response path=%s", tmp.name)
+                logger.debug("save_error_response path=%s", Path(tmp.name).name)
             finally:
                 tmp.close()
         resp.raise_for_status()
