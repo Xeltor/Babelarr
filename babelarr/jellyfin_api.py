@@ -8,7 +8,7 @@ import requests
 class JellyfinClient:
     """Minimal client for Jellyfin refresh API."""
 
-    def __init__(self, base_url: str, token: str, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout

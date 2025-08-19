@@ -68,7 +68,7 @@ docker run -d --name babelarr \
 | `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 | `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
-| `HTTP_TIMEOUT` | `10` | Timeout in seconds for non-translation HTTP requests. |
+| `HTTP_TIMEOUT` | `30` | Timeout in seconds for non-translation HTTP requests. |
 | `TRANSLATION_TIMEOUT` | `900` | Timeout in seconds for translation requests. |
 | `QUEUE_DB` | `/config/queue.db` | Path to the SQLite queue database. |
 

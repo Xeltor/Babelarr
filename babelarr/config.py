@@ -44,7 +44,7 @@ class Config:
     availability_check_interval: float = 30.0
     debounce: float = 0.1
     scan_interval_minutes: int = 60
-    http_timeout: float = 10.0
+    http_timeout: float = 30.0
     translation_timeout: float = 900.0
     persistent_sessions: bool = False
 
@@ -172,7 +172,7 @@ class Config:
             ),
             "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
-            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 10.0),
+            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 30.0),
             "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
                 "TRANSLATION_TIMEOUT", v, 900.0
             ),

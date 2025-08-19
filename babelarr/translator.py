@@ -51,7 +51,7 @@ class LibreTranslateClient:
         availability_check_interval: float = 30.0,
         api_key: str | None = None,
         persistent_session: bool = False,
-        http_timeout: float = 10.0,
+        http_timeout: float = 30.0,
         translation_timeout: float = 900.0,
     ) -> None:
         self.src_lang = src_lang
