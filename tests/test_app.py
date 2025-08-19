@@ -270,3 +270,25 @@ def test_translate_file_does_not_refresh_jellyfin(tmp_path, app):
     instance.translate_file(src, "nl")
 
     assert called == []
+
+
+def test_translation_done_logs_jellyfin_refresh(tmp_path, app, caplog):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    triggered: list[Path] = []
+
+    class DummyJellyfin:
+        def refresh_path(self, path: Path) -> None:  # pragma: no cover - trivial
+            triggered.append(path)
+
+    instance = app(jellyfin=DummyJellyfin())
+    with instance._pending_lock:
+        instance.pending_translations[src] = {"nl"}
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        instance.translation_done(src, "nl")
+
+    assert triggered == [src.with_name("video")]
+    assert "trigger_jellyfin_scan" in caplog.text
