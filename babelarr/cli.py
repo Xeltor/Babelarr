@@ -27,19 +27,24 @@ def validate_environment(config: Config) -> None:
     for d in config.root_dirs:
         path = Path(d)
         if not path.is_dir():
-            logger.warning("missing_watch_dir path=%s", d)
+            logger.warning("missing_watch_dir path=%s", path.name)
             continue
         if not os.access(path, os.R_OK):
-            logger.warning("unreadable_watch_dir path=%s", d)
+            logger.warning("unreadable_watch_dir path=%s", path.name)
             continue
         valid_dirs.append(d)
 
     if not valid_dirs:
-        logger.error("no_readable_dirs dirs=%s", config.root_dirs)
+        logger.error(
+            "no_readable_dirs dirs=%s", [Path(d).name for d in config.root_dirs]
+        )
         raise SystemExit("No valid watch directories configured")
 
     config.root_dirs = valid_dirs
-    logger.info("cli: environment_ready dirs=%s", valid_dirs)
+    logger.info(
+        "cli: environment_ready dirs=%s",
+        [Path(d).name for d in valid_dirs],
+    )
 
     try:
         resp = requests.head(config.api_url, timeout=900)

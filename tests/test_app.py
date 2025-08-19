@@ -204,7 +204,7 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
         queued_logs = [r for r in caplog.records if r.levelno == logging.INFO]
         assert any("queue=1" in r.message for r in queued_logs)
         assert any(
-            f"path={sub_file}" in r.message
+            f"path={sub_file.name}" in r.message
             and "lang=nl" in r.message
             and "task_id=" in r.message
             for r in queued_logs
@@ -218,7 +218,7 @@ def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
 
         done_logs = [r for r in caplog.records if "queue=0" in r.message]
         assert any(
-            f"path={sub_file}" in r.message and "lang=nl" in r.message
+            f"path={sub_file.name}" in r.message and "lang=nl" in r.message
             for r in done_logs
         )
     assert app_instance.db.all() == []
@@ -272,7 +272,7 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     assert any(
         rec.levelno == logging.DEBUG
         and rec.message.startswith("worker_finish")
-        and f"path={src}" in rec.message
+        and f"path={src.name}" in rec.message
         and "lang=nl" in rec.message
         and "task_id=" in rec.message
         for rec in caplog.records
@@ -326,7 +326,7 @@ def test_translation_logs_summary_once(tmp_path, caplog, app):
     ]
     assert len(info_logs) == 1
     msg = info_logs[0].message
-    assert f"path={src}" in msg
+    assert f"path={src.name}" in msg
     assert "lang=nl" in msg
     assert "task_id=" in msg
     assert "outcome=succeeded" in msg

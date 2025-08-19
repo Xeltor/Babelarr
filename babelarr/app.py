@@ -29,7 +29,10 @@ class TranslationLogger(logging.LoggerAdapter):
         lang: str | None = None,
         task_id: str | None = None,
     ) -> None:
-        extra = {"path": path, "lang": lang, "task_id": task_id}
+        path_name = None
+        if isinstance(path, (str, Path)):
+            path_name = Path(path).name
+        extra = {"path": path_name, "lang": lang, "task_id": task_id}
         super().__init__(logger, extra)
 
     def process(
@@ -42,6 +45,11 @@ class TranslationLogger(logging.LoggerAdapter):
             for k, v in supplied.items():
                 if v is not None:
                     extra[k] = v
+        path_val = extra.get("path")
+        if isinstance(path_val, Path):
+            extra["path"] = path_val.name
+        elif isinstance(path_val, str):
+            extra["path"] = Path(path_val).name
         kwargs["extra"] = extra
         if extra:
             msg = f"{msg} " + " ".join(f"{k}={v}" for k, v in extra.items())
@@ -87,7 +95,7 @@ class SrtHandler(PatternMatchingEventHandler):
             if new_size == size:
                 return True
             if time.monotonic() - start > self._max_wait:
-                logger.warning("timeout_stabilize path=%s", path)
+                logger.warning("timeout_stabilize path=%s", path.name)
                 return False
 
     def _handle(self, path: Path) -> None:
@@ -99,7 +107,7 @@ class SrtHandler(PatternMatchingEventHandler):
 
         last = self._recent.get(path)
         if last and now - last < self._debounce:
-            logger.debug("skip_recent path=%s age=%.2fs", path, now - last)
+            logger.debug("skip_recent path=%s age=%.2fs", path.name, now - last)
             return
 
         if self._wait_for_complete(path):
@@ -107,11 +115,11 @@ class SrtHandler(PatternMatchingEventHandler):
             self.app.enqueue(path)
 
     def on_created(self, event):
-        logger.debug("detect_new path=%s", event.src_path)
+        logger.debug("detect_new path=%s", Path(event.src_path).name)
         self._handle(Path(event.src_path))
 
     def on_deleted(self, event):
-        logger.debug("detect_deleted path=%s", event.src_path)
+        logger.debug("detect_deleted path=%s", Path(event.src_path).name)
         self.app.db.remove(Path(event.src_path))
 
     def on_modified(self, event):
@@ -120,7 +128,11 @@ class SrtHandler(PatternMatchingEventHandler):
 
     def on_moved(self, event):
         dest = Path(event.dest_path)
-        logger.debug("detect_move src=%s dest=%s", event.src_path, dest)
+        logger.debug(
+            "detect_move src=%s dest=%s",
+            Path(event.src_path).name,
+            dest.name,
+        )
         self._handle(dest)
 
 
@@ -162,7 +174,7 @@ class Application:
             return False
         output = self.output_path(src, lang)
         output.write_bytes(content)
-        tlog.debug("save output=%s", output)
+        tlog.debug("save output=%s", output.name)
         return True
 
     def _get_task(self) -> TranslationTask | None:
@@ -275,7 +287,7 @@ class Application:
             if not self.needs_translation(path, lang):
                 tlog.debug(
                     "translation_exists output=%s",
-                    self.output_path(path, lang),
+                    self.output_path(path, lang).name,
                 )
                 continue
             if self.db.add(path, lang, priority):
@@ -317,7 +329,7 @@ class Application:
         logger.info("scan_start")
         total = 0
         for root in self.config.root_dirs:
-            logger.debug("scan path=%s", root)
+            logger.debug("scan path=%s", Path(root).name)
             for file in Path(root).rglob(f"*{self.config.src_ext}"):
                 total += 1
                 self.enqueue(file, priority=1)
@@ -339,10 +351,10 @@ class Application:
     def watch(self):
         observer = Observer()
         for root in self.config.root_dirs:
-            logger.debug("watch path=%s", root)
+            logger.debug("watch path=%s", Path(root).name)
             root_path = Path(root)
             if not root_path.exists():
-                logger.warning("missing_directory path=%s", root_path)
+                logger.warning("missing_directory path=%s", root_path.name)
                 continue
             observer.schedule(SrtHandler(self), root, recursive=True)
         observer.start()
