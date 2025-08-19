@@ -9,8 +9,9 @@ from watchdog.events import (
     FileMovedEvent,
 )
 
-import babelarr.app as app_module
-from babelarr.app import SrtHandler
+import babelarr.watch as watch_module
+from babelarr.config import Config
+from babelarr.watch import SrtHandler
 
 
 def test_srt_handler_patterns(app):
@@ -164,7 +165,7 @@ def test_srt_handler_debounce(monkeypatch, tmp_path, app):
                 fh.write("part2")
             appended = True
 
-    monkeypatch.setattr(app_module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(watch_module.time, "sleep", fake_sleep)
 
     event = FileCreatedEvent(str(path))
     handler.dispatch(event)
@@ -225,14 +226,14 @@ def test_watch_lifecycle(monkeypatch, tmp_path, app):
         def join(self):
             events["join"] = True
 
-    monkeypatch.setattr(app_module, "Observer", FakeObserver)
+    monkeypatch.setattr(watch_module, "Observer", FakeObserver)
 
     def fake_sleep(seconds):
         app_instance.shutdown_event.set()
 
-    monkeypatch.setattr(app_module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(watch_module.time, "sleep", fake_sleep)
 
-    app_instance.watch()
+    watch_module.watch(app_instance)
 
     assert events["start"] and events["stop"] and events["join"]
     assert events["scheduled"] == [(str(tmp_path), True)]
@@ -243,7 +244,7 @@ def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
     existing.mkdir()
     missing = tmp_path / "missing"
 
-    cfg = app_module.Config(
+    cfg = Config(
         root_dirs=[str(existing), str(missing)],
         target_langs=["nl"],
         src_lang="en",
@@ -273,10 +274,10 @@ def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
         def join(self):
             pass
 
-    monkeypatch.setattr(app_module, "Observer", FakeObserver)
+    monkeypatch.setattr(watch_module, "Observer", FakeObserver)
 
     with caplog.at_level(logging.WARNING):
-        app_instance.watch()
+        watch_module.watch(app_instance)
 
     assert events["scheduled"] == [str(existing)]
     assert missing.name in caplog.text

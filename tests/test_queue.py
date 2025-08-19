@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
+import babelarr.worker as worker_module
+
 
 def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
     sub_file = tmp_path / "video.en.srt"
@@ -16,7 +18,7 @@ def test_enqueue_and_worker(tmp_path, monkeypatch, app, config):
 
     app_instance.enqueue(sub_file)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(app_instance.worker)
+        executor.submit(worker_module.worker, app_instance)
         app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
@@ -40,7 +42,7 @@ def test_enqueue_uppercase_extension(tmp_path, monkeypatch, app, config):
 
     app_instance.enqueue(sub_file)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(app_instance.worker)
+        executor.submit(worker_module.worker, app_instance)
         app_instance.tasks.join()
         app_instance.shutdown_event.set()
 
