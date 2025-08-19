@@ -9,6 +9,7 @@ import pytest
 import requests
 
 import babelarr.worker as worker_module
+from babelarr.config import Config
 from babelarr.worker import TranslationTask
 
 pytestmark = pytest.mark.integration
@@ -45,6 +46,46 @@ def test_worker_retry_on_network_failure(tmp_path, caplog, app):
         app_instance.shutdown_event.set()
 
     assert app_instance.output_path(src, "nl").exists()
+
+
+def test_refresh_base_path_after_all_translations(tmp_path, app, monkeypatch):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    cfg = Config(
+        root_dirs=[str(tmp_path)],
+        target_langs=["nl", "fr"],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=1,
+        queue_db=str(tmp_path / "queue.db"),
+        retry_count=2,
+        backoff_delay=0,
+    )
+
+    class DummyJellyfin:
+        def __init__(self):
+            self.calls: list[Path] = []
+
+        def refresh_path(self, path):
+            self.calls.append(Path(path))
+
+    instance = app(cfg=cfg, jellyfin=DummyJellyfin())
+    monkeypatch.setattr(instance, "_ensure_workers", lambda: None)
+    instance.enqueue(src)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(worker_module.worker, instance)
+        instance.tasks.join()
+        instance.shutdown_event.set()
+
+    out_nl = instance.output_path(src, "nl")
+    out_fr = instance.output_path(src, "fr")
+    calls = instance.jellyfin.calls
+    assert calls[-1] == src.with_suffix("")
+    assert set(calls[:-1]) == {out_nl, out_fr}
+    assert instance.pending_translations == {}
 
 
 def test_queue_length_logging(tmp_path, monkeypatch, app, config, caplog):
