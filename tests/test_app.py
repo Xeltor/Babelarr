@@ -256,17 +256,17 @@ def test_workers_spawn_and_exit(tmp_path, app, caplog):
     assert instance._active_workers == 0
 
 
-def test_translate_file_refreshes_jellyfin(tmp_path, app):
+def test_translate_file_does_not_refresh_jellyfin(tmp_path, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
     called: list[Path] = []
 
     class DummyJellyfin:
-        def refresh_path(self, path: Path) -> None:
+        def refresh_path(self, path: Path) -> None:  # pragma: no cover - trivial
             called.append(path)
 
     instance = app(jellyfin=DummyJellyfin())
     instance.translate_file(src, "nl")
 
-    assert called == [instance.output_path(src, "nl")]
+    assert called == []

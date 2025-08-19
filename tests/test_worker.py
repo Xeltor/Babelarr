@@ -83,8 +83,9 @@ def test_refresh_base_path_after_all_translations(tmp_path, app, monkeypatch):
     out_nl = instance.output_path(src, "nl")
     out_fr = instance.output_path(src, "fr")
     calls = instance.jellyfin.calls
-    assert calls[-1] == src.with_suffix("")
-    assert set(calls[:-1]) == {out_nl, out_fr}
+    expected = src.with_name(src.name.removesuffix(cfg.src_ext))
+    assert calls == [expected]
+    assert out_nl not in calls and out_fr not in calls
     assert instance.pending_translations == {}
 
 
