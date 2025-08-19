@@ -2,6 +2,7 @@ import logging
 import threading
 from pathlib import Path
 
+import pytest
 from watchdog.events import (
     FileCreatedEvent,
     FileDeletedEvent,
@@ -12,6 +13,8 @@ from watchdog.events import (
 import babelarr.watch as watch_module
 from babelarr.config import Config
 from babelarr.watch import SrtHandler
+
+pytestmark = pytest.mark.integration
 
 
 def test_srt_handler_patterns(app):

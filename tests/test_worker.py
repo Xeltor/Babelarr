@@ -5,10 +5,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 import requests
 
 import babelarr.worker as worker_module
 from babelarr.worker import TranslationTask
+
+pytestmark = pytest.mark.integration
 
 
 def test_worker_retry_on_network_failure(tmp_path, caplog, app):
