@@ -11,6 +11,7 @@ import schedule
 
 from . import watch as watch_module
 from .config import Config
+from .jellyfin_api import JellyfinClient
 from .queue_db import QueueRepository
 from .translator import Translator
 from .worker import TranslationLogger, TranslationTask
@@ -20,13 +21,19 @@ logger = logging.getLogger(__name__)
 
 
 class Application:
-    def __init__(self, config: Config, translator: Translator):
+    def __init__(
+        self,
+        config: Config,
+        translator: Translator,
+        jellyfin: JellyfinClient | None = None,
+    ):
         """Create an application coordinator.
 
         Initializes queues and thread primitives; call once at startup.
         """
         self.config = config
         self.translator = translator
+        self.jellyfin = jellyfin
         self.tasks: queue.PriorityQueue[tuple[int, int, TranslationTask]] = (
             queue.PriorityQueue()
         )
@@ -66,6 +73,11 @@ class Application:
         output = self.output_path(src, lang)
         output.write_bytes(content)
         tlog.debug("save output=%s", output.name)
+        if self.jellyfin:
+            try:
+                self.jellyfin.refresh_path(output)
+            except Exception as exc:  # noqa: BLE001
+                tlog.error("jellyfin_refresh_failed error=%s", exc)
         return True
 
     def needs_translation(self, path: Path, lang: str) -> bool:

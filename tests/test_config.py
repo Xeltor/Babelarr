@@ -88,3 +88,21 @@ def test_persistent_sessions_flag(monkeypatch):
     monkeypatch.setenv("PERSISTENT_SESSIONS", "true")
     cfg = Config.from_env()
     assert cfg.persistent_sessions is True
+
+
+def test_jellyfin_env_parsed(monkeypatch, tmp_path):
+    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
+    monkeypatch.setenv("JELLYFIN_URL", "http://jf")
+    monkeypatch.setenv("JELLYFIN_TOKEN", "abc")
+    cfg = Config.from_env()
+    assert cfg.jellyfin_url == "http://jf"
+    assert cfg.jellyfin_token == "abc"
+
+
+def test_jellyfin_defaults(monkeypatch, tmp_path):
+    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
+    monkeypatch.delenv("JELLYFIN_URL", raising=False)
+    monkeypatch.delenv("JELLYFIN_TOKEN", raising=False)
+    cfg = Config.from_env()
+    assert cfg.jellyfin_url is None
+    assert cfg.jellyfin_token is None
