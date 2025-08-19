@@ -87,6 +87,7 @@ class Application:
 
     def translation_done(self, path: Path, lang: str) -> None:
         """Update pending translations and refresh Jellyfin when complete."""
+        folder = path.parent
         with self._pending_lock:
             pending = self.pending_translations.get(path)
             if pending is None:
@@ -95,14 +96,14 @@ class Application:
             if pending:
                 return
             del self.pending_translations[path]
+            if any(p.parent == folder for p in self.pending_translations):
+                return
         if self.jellyfin:
-            stem = path.name.removesuffix(self.config.src_ext)
-            refresh_path = path.with_name(stem)
             try:
-                self.jellyfin.refresh_path(refresh_path)
-                TranslationLogger(refresh_path, lang).info("trigger_jellyfin_scan")
+                self.jellyfin.refresh_path(folder)
+                TranslationLogger(folder, lang).info("trigger_jellyfin_scan")
             except Exception as exc:  # noqa: BLE001
-                TranslationLogger(refresh_path, lang).error(
+                TranslationLogger(folder, lang).error(
                     "jellyfin_refresh_failed error=%s", exc
                 )
 
