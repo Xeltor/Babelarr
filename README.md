@@ -10,9 +10,11 @@ A lightweight subtitle translator that watches directories for subtitle files in
 
 ### Quick Start (Non-Docker)
 
-Install Babelarr and its dependencies locally and configure the required environment variables:
+Create and activate a virtual environment, install Babelarr, and configure the required environment variables:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -e .  # or: pip install babelarr
 
 export WATCH_DIRS="/path/to/subtitles"
@@ -20,6 +22,8 @@ export LIBRETRANSLATE_URL="http://localhost:5000"
 
 babelarr
 ```
+
+All subsequent `make` and CLI commands should be executed with the virtual environment activated.
 
 ### Docker
 
@@ -116,7 +120,7 @@ services:
 
 ## Development
 
-The provided Makefile wraps common development tasks:
+After activating the virtual environment, run `make setup` to install development dependencies and pre-commit hooks. The provided Makefile wraps common development tasks:
 
 ```bash
 make setup  # install dev dependencies and pre-commit hooks
