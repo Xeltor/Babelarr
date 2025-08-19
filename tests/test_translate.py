@@ -80,7 +80,7 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
         return resp
 
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -117,7 +117,7 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
         raise requests.ConnectionError("boom")
 
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -157,7 +157,7 @@ def test_api_key_included(monkeypatch, tmp_path):
         return resp
 
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -199,7 +199,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
         return resp
 
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -240,7 +240,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
     calls: list[tuple[str, int]] = []
 
     def fake_get_session(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         calls.append((url, timeout))
         resp = requests.Response()
         resp.status_code = 200
@@ -251,7 +251,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
         return resp
 
     def fake_get(url, *, timeout, headers=None):
-        assert timeout == 10
+        assert timeout == 30
         calls.append((url, timeout))
         downloaded["url"] = url
         resp = requests.Response()
@@ -273,14 +273,14 @@ def test_download_translated_file(monkeypatch, tmp_path):
     assert downloaded["url"] == "http://example/translated.srt"
     assert result == b"translated"
     assert calls == [
-        ("http://example/languages", 10),
-        ("http://example/translated.srt", 10),
+        ("http://example/languages", 30),
+        ("http://example/translated.srt", 30),
     ]
 
 
 def test_unsupported_source_language(monkeypatch):
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en", "nl"]}]'
@@ -297,7 +297,7 @@ def test_unsupported_target_language(monkeypatch, tmp_path):
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en"]}]'

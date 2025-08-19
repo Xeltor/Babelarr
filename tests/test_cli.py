@@ -214,7 +214,7 @@ def test_validate_environment_logs_environment_ready(tmp_path, monkeypatch, capl
         status_code = 200
 
     def fake_head(url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         return DummyResp()
 
     monkeypatch.setattr(cli.requests, "head", fake_head)

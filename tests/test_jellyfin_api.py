@@ -25,4 +25,4 @@ def test_refresh_path(monkeypatch):
     assert calls["url"] == "http://jf/Library/Media/Updated"
     assert calls["json"] == {"Updates": [{"Path": "/data/file.srt"}]}
     assert calls["headers"] == {"X-Emby-Token": "tok"}
-    assert calls["timeout"] == 10
+    assert calls["timeout"] == 30

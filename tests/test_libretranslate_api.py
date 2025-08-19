@@ -9,7 +9,7 @@ from babelarr.libretranslate_api import LibreTranslateAPI
 def test_fetch_languages(monkeypatch):
     def fake_get(self, url, *, timeout):
         assert url == "http://only/languages"
-        assert timeout == 10
+        assert timeout == 30
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"[]"
@@ -27,7 +27,7 @@ def test_fetch_languages(monkeypatch):
 
 def test_fetch_languages_error(monkeypatch):
     def fake_get(self, url, *, timeout):
-        assert timeout == 10
+        assert timeout == 30
         raise requests.ConnectionError("boom")
 
     monkeypatch.setattr(requests.Session, "get", fake_get)
@@ -95,7 +95,7 @@ def test_download_uses_connection_close(monkeypatch):
     calls: list[dict | None] = []
 
     def fake_get(url, *, timeout, headers=None):
-        assert timeout == 10
+        assert timeout == 30
         calls.append(headers)
         resp = requests.Response()
         resp.status_code = 200
