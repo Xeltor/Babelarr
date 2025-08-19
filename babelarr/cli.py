@@ -48,7 +48,7 @@ def validate_environment(config: Config) -> None:
     )
 
     try:
-        resp = requests.head(config.api_url, timeout=900)
+        resp = requests.head(config.api_url, timeout=config.http_timeout)
         if resp.status_code >= 400:
             raise requests.RequestException(f"HTTP {resp.status_code}")
     except requests.RequestException as exc:
@@ -141,11 +141,15 @@ def main(argv: list[str] | None = None) -> None:
         config.availability_check_interval,
         api_key=config.api_key,
         persistent_session=config.persistent_sessions,
+        http_timeout=config.http_timeout,
+        translation_timeout=config.translation_timeout,
     )
     filter_target_languages(config, translator)
     jellyfin_client = None
     if config.jellyfin_url and config.jellyfin_token:
-        jellyfin_client = JellyfinClient(config.jellyfin_url, config.jellyfin_token)
+        jellyfin_client = JellyfinClient(
+            config.jellyfin_url, config.jellyfin_token, config.http_timeout
+        )
     app = Application(config, translator, jellyfin_client)
 
     def handle_signal(signum, frame):

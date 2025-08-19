@@ -213,7 +213,11 @@ def test_validate_environment_logs_environment_ready(tmp_path, monkeypatch, capl
     class DummyResp:
         status_code = 200
 
-    monkeypatch.setattr(cli.requests, "head", lambda url, timeout: DummyResp())
+    def fake_head(url, *, timeout):
+        assert timeout == 10
+        return DummyResp()
+
+    monkeypatch.setattr(cli.requests, "head", fake_head)
 
     with caplog.at_level(logging.INFO):
         cli.validate_environment(config)

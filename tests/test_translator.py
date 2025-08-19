@@ -53,6 +53,22 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     asyncio.run(api.close())
 
 
+def test_is_available_uses_http_timeout(monkeypatch):
+    client = LibreTranslateClient("http://only", "en")
+
+    class DummyResp:
+        status_code = 200
+
+    def fake_head(self, url, *, timeout):
+        assert timeout == 10
+        return DummyResp()
+
+    monkeypatch.setattr(requests.Session, "head", fake_head)
+
+    assert client.is_available() is True
+    asyncio.run(client.api.close())
+
+
 def _prepared_client():
     client = LibreTranslateClient("http://example", "en")
     client.languages = {"en": {"nl"}}
