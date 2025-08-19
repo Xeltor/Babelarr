@@ -17,8 +17,17 @@ class LibreTranslateAPI:
     connections when multiple workers are used behind a load balancer.
     """
 
-    def __init__(self, base_url: str, persistent_session: bool = False) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        http_timeout: float = 10.0,
+        translation_timeout: float = 900.0,
+        persistent_session: bool = False,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.http_timeout = http_timeout
+        self.translation_timeout = translation_timeout
         self._local = threading.local()
         self.persistent_session = persistent_session
 
@@ -39,7 +48,7 @@ class LibreTranslateAPI:
         """Return the languages supported by the server."""
 
         url = self.base_url + "/languages"
-        resp = self.session.get(url, timeout=900)
+        resp = self.session.get(url, timeout=self.http_timeout)
         resp.raise_for_status()
         return resp.json()
 
@@ -60,19 +69,25 @@ class LibreTranslateAPI:
         with open(path, "rb") as fh:
             files = {"file": fh}
             if self.persistent_session:
-                return self.session.post(url, files=files, data=data, timeout=900)
+                return self.session.post(
+                    url, files=files, data=data, timeout=self.translation_timeout
+                )
             headers = {"Connection": "close"}
             return requests.post(
-                url, files=files, data=data, timeout=900, headers=headers
+                url,
+                files=files,
+                data=data,
+                timeout=self.translation_timeout,
+                headers=headers,
             )
 
     def download(self, url: str) -> requests.Response:
         """Download *url* using a fresh connection by default."""
 
         if self.persistent_session:
-            return self.session.get(url, timeout=900)
+            return self.session.get(url, timeout=self.http_timeout)
         headers = {"Connection": "close"}
-        return requests.get(url, timeout=900, headers=headers)
+        return requests.get(url, timeout=self.http_timeout, headers=headers)
 
     async def close(self) -> None:
         """Asynchronously close the thread-local session for this thread."""

@@ -51,6 +51,8 @@ class LibreTranslateClient:
         availability_check_interval: float = 30.0,
         api_key: str | None = None,
         persistent_session: bool = False,
+        http_timeout: float = 10.0,
+        translation_timeout: float = 900.0,
     ) -> None:
         self.src_lang = src_lang
         self.retry_count = retry_count
@@ -58,14 +60,21 @@ class LibreTranslateClient:
         self.availability_check_interval = availability_check_interval
         self.api_key = api_key
 
-        self.api = LibreTranslateAPI(api_url, persistent_session=persistent_session)
+        self.api = LibreTranslateAPI(
+            api_url,
+            http_timeout=http_timeout,
+            translation_timeout=translation_timeout,
+            persistent_session=persistent_session,
+        )
         self.languages: dict[str, set[str]] | None = None
         self.supported_targets: set[str] | None = None
 
     def is_available(self) -> bool:
         """Return ``True`` if the service responds without error."""
         try:
-            resp = self.api.session.head(self.api.base_url, timeout=900)
+            resp = self.api.session.head(
+                self.api.base_url, timeout=self.api.http_timeout
+            )
             return resp.status_code < 400
         except requests.RequestException:
             return False

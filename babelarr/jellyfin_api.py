@@ -8,9 +8,10 @@ import requests
 class JellyfinClient:
     """Minimal client for Jellyfin refresh API."""
 
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self.timeout = timeout
 
     def refresh_path(self, path: Path) -> None:
         """Notify Jellyfin that *path* has been updated."""
@@ -18,5 +19,5 @@ class JellyfinClient:
         url = self.base_url + "/Library/Media/Updated"
         payload = {"Updates": [{"Path": str(path)}]}
         headers = {"X-Emby-Token": self.token}
-        resp = requests.post(url, json=payload, headers=headers, timeout=900)
+        resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
         resp.raise_for_status()

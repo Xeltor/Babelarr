@@ -7,9 +7,9 @@ from babelarr.libretranslate_api import LibreTranslateAPI
 
 
 def test_fetch_languages(monkeypatch):
-    def fake_get(self, url, *, timeout=900):
+    def fake_get(self, url, *, timeout):
         assert url == "http://only/languages"
-        assert timeout == 900
+        assert timeout == 10
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"[]"
@@ -26,8 +26,8 @@ def test_fetch_languages(monkeypatch):
 
 
 def test_fetch_languages_error(monkeypatch):
-    def fake_get(self, url, *, timeout=900):
-        assert timeout == 900
+    def fake_get(self, url, *, timeout):
+        assert timeout == 10
         raise requests.ConnectionError("boom")
 
     monkeypatch.setattr(requests.Session, "get", fake_get)
@@ -44,7 +44,7 @@ def test_translate_file_error(monkeypatch, tmp_path):
     tmp_file = tmp_path / "a.srt"
     tmp_file.write_text("dummy")
 
-    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
+    def fake_post(url, *, files=None, data=None, timeout, headers=None):
         assert timeout == 900
         raise requests.ConnectionError("fail")
 
@@ -94,7 +94,8 @@ def test_translate_file(monkeypatch, tmp_path):
 def test_download_uses_connection_close(monkeypatch):
     calls: list[dict | None] = []
 
-    def fake_get(url, *, timeout=900, headers=None):
+    def fake_get(url, *, timeout, headers=None):
+        assert timeout == 10
         calls.append(headers)
         resp = requests.Response()
         resp.status_code = 200
@@ -117,7 +118,8 @@ def test_translate_file_persistent_session(monkeypatch, tmp_path):
 
     sessions = []
 
-    def fake_post(self, url, *, files=None, data=None, timeout=900, headers=None):
+    def fake_post(self, url, *, files=None, data=None, timeout, headers=None):
+        assert timeout == 900
         sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200

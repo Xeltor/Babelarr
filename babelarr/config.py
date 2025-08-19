@@ -44,6 +44,8 @@ class Config:
     availability_check_interval: float = 30.0
     debounce: float = 0.1
     scan_interval_minutes: int = 60
+    http_timeout: float = 10.0
+    translation_timeout: float = 900.0
     persistent_sessions: bool = False
 
     @staticmethod
@@ -170,6 +172,10 @@ class Config:
             ),
             "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
+            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 10.0),
+            "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
+                "TRANSLATION_TIMEOUT", v, 900.0
+            ),
             "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
                 "PERSISTENT_SESSIONS", v, False
             ),
@@ -186,13 +192,15 @@ class Config:
         availability_check_interval = parsed["AVAILABILITY_CHECK_INTERVAL"]
         debounce = parsed["DEBOUNCE_SECONDS"]
         scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
+        http_timeout = parsed["HTTP_TIMEOUT"]
+        translation_timeout = parsed["TRANSLATION_TIMEOUT"]
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
 
         logger.info(
             "loaded config root_dirs=%s target_langs=%s src_lang=%s api_url=%s "
             "workers=%s queue_db=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
-            "persistent_sessions=%s",
+            "persistent_sessions=%s http_timeout=%s translation_timeout=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -208,6 +216,8 @@ class Config:
             debounce,
             scan_interval_minutes,
             persistent_sessions,
+            http_timeout,
+            translation_timeout,
         )
 
         return cls(
@@ -226,5 +236,7 @@ class Config:
             availability_check_interval=availability_check_interval,
             debounce=debounce,
             scan_interval_minutes=scan_interval_minutes,
+            http_timeout=http_timeout,
+            translation_timeout=translation_timeout,
             persistent_sessions=persistent_sessions,
         )
