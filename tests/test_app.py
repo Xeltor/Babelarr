@@ -30,6 +30,15 @@ def test_full_scan(tmp_path, monkeypatch, app):
     assert sorted(called) == sorted([first, second])
 
 
+def test_enqueue_tracks_pending_languages(tmp_path, app, monkeypatch):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+    instance = app()
+    monkeypatch.setattr(instance, "_ensure_workers", lambda: None)
+    instance.enqueue(src)
+    assert instance.pending_translations[src] == {"nl"}
+
+
 def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
     first = tmp_path / "one.en.srt"
     first.write_text("a")

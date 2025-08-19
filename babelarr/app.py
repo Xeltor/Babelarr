@@ -37,6 +37,8 @@ class Application:
         self.tasks: queue.PriorityQueue[tuple[int, int, TranslationTask]] = (
             queue.PriorityQueue()
         )
+        self.pending_translations: dict[Path, set[str]] = {}
+        self._pending_lock = threading.Lock()
         self.db = QueueRepository(self.config.queue_db)
         self.shutdown_event = threading.Event()
         self.translator_available = threading.Event()
@@ -88,6 +90,24 @@ class Application:
         out = self.output_path(path, lang)
         return not out.exists()
 
+    def translation_done(self, path: Path, lang: str) -> None:
+        """Update pending translations and refresh Jellyfin when complete."""
+        with self._pending_lock:
+            pending = self.pending_translations.get(path)
+            if pending is None:
+                return
+            pending.discard(lang)
+            if pending:
+                return
+            del self.pending_translations[path]
+        if self.jellyfin:
+            try:
+                self.jellyfin.refresh_path(path.with_suffix(""))
+            except Exception as exc:  # noqa: BLE001
+                TranslationLogger(path, lang).error(
+                    "jellyfin_refresh_failed error=%s", exc
+                )
+
     def enqueue(self, path: Path, *, priority: int = 0) -> None:
         """Queue *path* for translation with the given *priority*.
 
@@ -108,6 +128,8 @@ class Application:
                 )
                 continue
             if self.db.add(path, lang, priority):
+                with self._pending_lock:
+                    self.pending_translations.setdefault(path, set()).add(lang)
                 queued_any = True
                 task_id = uuid4().hex
                 task = TranslationTask(path, lang, task_id, priority)
@@ -173,6 +195,8 @@ class Application:
             task = TranslationTask(path, lang, uuid4().hex, priority)
             self.tasks.put((priority, self._task_counter, task))
             self._task_counter += 1
+            with self._pending_lock:
+                self.pending_translations.setdefault(path, set()).add(lang)
             tlog = TranslationLogger(path, lang, task.task_id)
             tlog.debug("restored")
             self._ensure_workers()
