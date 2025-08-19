@@ -290,5 +290,31 @@ def test_translation_done_logs_jellyfin_refresh(tmp_path, app, caplog):
     with caplog.at_level(logging.INFO):
         instance.translation_done(src, "nl")
 
-    assert triggered == [src.with_name("video")]
+    assert triggered == [tmp_path]
     assert "trigger_jellyfin_scan" in caplog.text
+
+
+def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
+    first = tmp_path / "one.en.srt"
+    second = tmp_path / "two.en.srt"
+    first.write_text("a")
+    second.write_text("b")
+
+    triggered: list[Path] = []
+
+    class DummyJellyfin:
+        def refresh_path(self, path: Path) -> None:  # pragma: no cover - trivial
+            triggered.append(path)
+
+    instance = app(jellyfin=DummyJellyfin())
+    with instance._pending_lock:
+        instance.pending_translations[first] = {"nl"}
+        instance.pending_translations[second] = {"nl"}
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        instance.translation_done(first, "nl")
+        instance.translation_done(second, "nl")
+
+    assert triggered == [tmp_path]
+    assert caplog.text.count("trigger_jellyfin_scan") == 1
