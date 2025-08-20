@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import threading
 
@@ -50,7 +49,7 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     assert len(calls) == 5
     assert all(h == {"Connection": "close"} for h in calls.values())
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_is_available_uses_http_timeout(monkeypatch):
@@ -66,7 +65,7 @@ def test_is_available_uses_http_timeout(monkeypatch):
     monkeypatch.setattr(requests.Session, "head", fake_head)
 
     assert client.is_available() is True
-    asyncio.run(client.api.close())
+    client.api.close()
 
 
 def _prepared_client():

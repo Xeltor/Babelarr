@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 import requests
 
@@ -26,7 +24,7 @@ def test_fetch_languages(monkeypatch):
     assert languages == []
     assert calls == [{"Connection": "close"}]
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_fetch_languages_error(monkeypatch):
@@ -41,7 +39,7 @@ def test_fetch_languages_error(monkeypatch):
     with pytest.raises(requests.ConnectionError):
         api.fetch_languages()
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_fetch_languages_persistent_session(monkeypatch):
@@ -64,7 +62,7 @@ def test_fetch_languages_persistent_session(monkeypatch):
 
     assert len(set(sessions)) == 1
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_translate_file_error(monkeypatch, tmp_path):
@@ -82,7 +80,7 @@ def test_translate_file_error(monkeypatch, tmp_path):
     with pytest.raises(requests.ConnectionError):
         api.translate_file(tmp_file, "en", "nl")
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_translate_file(monkeypatch, tmp_path):
@@ -115,7 +113,7 @@ def test_translate_file(monkeypatch, tmp_path):
 
     assert headers_seen == [{"Connection": "close"}, {"Connection": "close"}]
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_download_uses_connection_close(monkeypatch):
@@ -136,7 +134,7 @@ def test_download_uses_connection_close(monkeypatch):
     assert resp.content == b"data"
     assert calls == [{"Connection": "close"}]
 
-    asyncio.run(api.close())
+    api.close()
 
 
 def test_translate_file_persistent_session(monkeypatch, tmp_path):
@@ -161,4 +159,4 @@ def test_translate_file_persistent_session(monkeypatch, tmp_path):
 
     assert len(set(sessions)) == 1
 
-    asyncio.run(api.close())
+    api.close()

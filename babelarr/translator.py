@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from pathlib import Path
@@ -199,4 +198,4 @@ class LibreTranslateClient:
                 time.sleep(delay)
 
     def close(self) -> None:
-        asyncio.run(self.api.close())
+        self.api.close()
