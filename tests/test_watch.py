@@ -110,6 +110,37 @@ def test_srt_handler_rapid_events(monkeypatch, tmp_path, app):
     assert calls == [path]
 
 
+def test_srt_handler_prunes_periodically(monkeypatch, tmp_path, app):
+    path = tmp_path / "again.en.srt"
+    path.write_text("example")
+
+    calls: list[Path] = []
+
+    app_instance = app()
+    app_instance.config.debounce = 0.01
+
+    monkeypatch.setattr(app_instance, "enqueue", lambda p: calls.append(p))
+
+    handler = SrtHandler(app_instance)
+    monkeypatch.setattr(handler, "_wait_for_complete", lambda p: True)
+
+    times = iter([0.02, 0.025, 0.04])
+    monkeypatch.setattr(watch_module.time, "monotonic", lambda: next(times))
+
+    event = FileCreatedEvent(str(path))
+
+    handler.dispatch(event)
+    first = handler._last_prune
+    handler.dispatch(event)
+    second = handler._last_prune
+    handler.dispatch(event)
+
+    assert first == 0.02
+    assert second == 0.02
+    assert handler._last_prune == 0.04
+    assert calls == [path, path]
+
+
 def test_srt_handler_delete_removes_from_queue(tmp_path, app):
     path = tmp_path / "sample.en.srt"
     path.write_text("example")
