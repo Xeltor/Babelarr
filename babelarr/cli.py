@@ -43,7 +43,7 @@ def validate_environment(config: Config) -> None:
 
     config.root_dirs = valid_dirs
     logger.info(
-        "cli: environment_ready dirs=%s",
+        "environment_ready dirs=%s",
         [Path(d).name for d in valid_dirs],
     )
 
@@ -83,7 +83,7 @@ def filter_target_languages(config: Config, translator: LibreTranslateClient) ->
             lang for lang in config.target_langs if lang in supported
         ]
 
-    logger.info("cli: target_langs langs=%s", ", ".join(config.target_langs))
+    logger.info("target_langs langs=%s", ", ".join(config.target_langs))
     if not config.target_langs:
         logger.error("no_supported_targets")
         raise SystemExit("No supported target languages configured")
@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     logging.getLogger("watchdog").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logger.info("cli: start log_level=%s log_file=%s", log_level, log_file)
+    logger.info("start log_level=%s log_file=%s", log_level, log_file)
 
     if args.command == "queue":
         config = Config.from_env()
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> None:
     config = Config.from_env()
     validate_environment(config)
     logger.info(
-        "cli: config_loaded api_url=%s targets=%s",
+        "config_loaded api_url=%s targets=%s",
         config.api_url,
         config.target_langs,
     )
