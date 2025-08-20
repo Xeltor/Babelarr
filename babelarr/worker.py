@@ -101,20 +101,27 @@ def handle_failure(
     return False
 
 
-def worker(app: Application) -> None:
+def worker(app: Application, idle_timeout: float = 30 * 60) -> None:
+    """Process translation tasks until shutdown or *idle_timeout* elapses."""
+
     name = threading.current_thread().name
     logger.debug("worker_start name=%s", name)
     wait = getattr(app.translator, "wait_until_available", None)
     if callable(wait):
         wait()
     app.translator_available.set()
+    last_activity = time.monotonic()
     try:
         while not app.shutdown_event.is_set():
             if not app.translator_available.wait(timeout=1):
+                if time.monotonic() - last_activity > idle_timeout:
+                    break
                 continue
             task = get_task(app)
             if task is None:
-                break
+                if time.monotonic() - last_activity > idle_timeout:
+                    break
+                continue
             path, lang, task_id = task.path, task.lang, task.task_id
             tlog = TranslationLogger(path, lang, task_id)
             start_time = time.monotonic()
@@ -128,6 +135,7 @@ def worker(app: Application) -> None:
                 success = False
                 outcome = "failed"
             elapsed = time.monotonic() - start_time
+            last_activity = time.monotonic()
             if requeue:
                 app.tasks.put((task.priority, app._task_counter, task))
                 app._task_counter += 1

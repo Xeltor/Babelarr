@@ -1,3 +1,4 @@
+import functools
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -222,7 +223,7 @@ def test_configurable_scan_interval(monkeypatch, config, app):
     assert called["func"].__func__ is instance.request_scan.__func__
 
 
-def test_workers_spawn_and_exit(tmp_path, app, caplog):
+def test_workers_spawn_and_exit(tmp_path, app, caplog, monkeypatch):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
 
@@ -240,6 +241,13 @@ def test_workers_spawn_and_exit(tmp_path, app, caplog):
             return None
 
     translator = BlockingTranslator()
+    import babelarr.app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "worker_loop",
+        functools.partial(worker_module.worker, idle_timeout=0.1),
+    )
     instance = app(translator=translator)
     assert instance._active_workers == 0
 
