@@ -147,8 +147,8 @@ def test_main_logs_start_and_config_loaded(monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         cli.main([])
 
-    assert "cli: start log_level=INFO log_file=None" in caplog.text
-    assert "cli: config_loaded api_url=http://example targets=['nl']" in caplog.text
+    assert "start log_level=INFO log_file=None" in caplog.text
+    assert "config_loaded api_url=http://example targets=['nl']" in caplog.text
 
 
 def test_queue_outputs_count_and_paths(tmp_path, monkeypatch, capsys):
@@ -221,7 +221,7 @@ def test_validate_environment_logs_environment_ready(tmp_path, monkeypatch, capl
 
     with caplog.at_level(logging.INFO):
         cli.validate_environment(config)
-        assert "cli: environment_ready" in caplog.text
+        assert "environment_ready" in caplog.text
 
 
 def test_filter_target_languages_removes_unsupported(caplog):
@@ -248,7 +248,7 @@ def test_filter_target_languages_removes_unsupported(caplog):
         cli.filter_target_languages(config, translator)
         assert config.target_langs == ["nl"]
         assert "unsupported_targets" in caplog.text
-        assert "cli: target_langs langs=nl" in caplog.text
+        assert "target_langs langs=nl" in caplog.text
 
 
 def test_filter_target_languages_exits_when_none_supported():
