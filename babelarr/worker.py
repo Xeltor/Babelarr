@@ -138,14 +138,14 @@ def worker(app: Application) -> None:
                 )
             else:
                 app.db.remove(path, lang)
-                if app.jellyfin:
-                    app.translation_done(path, lang)
                 tlog.info(
                     "translation outcome=%s duration=%.2fs queue=%d",
                     outcome,
                     elapsed,
                     app.db.count(),
                 )
+                if app.jellyfin:
+                    app.translation_done(path, lang)
             app.tasks.task_done()
             tlog.debug(
                 "worker_finish name=%s duration=%.2fs",
