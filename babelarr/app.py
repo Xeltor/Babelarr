@@ -101,13 +101,11 @@ class Application:
         if self.jellyfin:
             try:
                 self.jellyfin.refresh_path(folder)
-                TranslationLogger(folder, lang).info(
+                TranslationLogger(folder).info(
                     "jellyfin_refresh show=%s", folder.parent.name
                 )
             except Exception as exc:  # noqa: BLE001
-                TranslationLogger(folder, lang).error(
-                    "jellyfin_refresh_failed error=%s", exc
-                )
+                TranslationLogger(folder).error("jellyfin_refresh_failed error=%s", exc)
 
     def enqueue(self, path: Path, *, priority: int = 0) -> None:
         """Queue *path* for translation with the given *priority*.

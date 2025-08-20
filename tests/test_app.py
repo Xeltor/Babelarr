@@ -302,6 +302,7 @@ def test_translation_done_logs_jellyfin_refresh(tmp_path, app, caplog):
     assert "jellyfin_refresh" in caplog.text
     assert f"path={tmp_path.name}" in caplog.text
     assert f"show={tmp_path.parent.name}" in caplog.text
+    assert "lang=" not in caplog.text
 
 
 def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
@@ -329,3 +330,4 @@ def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
     assert triggered == [tmp_path]
     assert caplog.text.count("jellyfin_refresh") == 1
     assert f"show={tmp_path.parent.name}" in caplog.text
+    assert "lang=" not in caplog.text
