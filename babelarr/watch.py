@@ -90,6 +90,7 @@ class SrtHandler(PatternMatchingEventHandler):
 
 
 def watch(app: Application) -> None:
+    """Launch a watchdog observer for all configured directories and block until shutdown."""
     observer = Observer()
     for root in app.config.root_dirs:
         logger.debug("watch path=%s", Path(root).name)
