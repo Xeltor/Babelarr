@@ -15,8 +15,8 @@ def test_parse_target_languages_filters_and_normalizes(caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         langs = Config._parse_target_languages(raw)
     assert langs == ["nl", "en"]
-    assert "Empty language code" in caplog.text
-    assert "Invalid language code 'xx1'" in caplog.text
+    assert "ignore empty language code" in caplog.text
+    assert "ignore invalid language code 'xx1'" in caplog.text
 
 
 def test_parse_target_languages_empty_raises():
@@ -28,14 +28,14 @@ def test_parse_workers_caps_and_defaults(caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         workers = Config._parse_workers("20")
     assert workers == 10
-    assert "capping" in caplog.text
+    assert "cap workers" in caplog.text
 
 
 def test_parse_scan_interval_invalid(caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         interval = Config._parse_scan_interval("bad")
     assert interval == 60
-    assert "Invalid SCAN_INTERVAL_MINUTES" in caplog.text
+    assert "invalid SCAN_INTERVAL_MINUTES" in caplog.text
 
 
 def test_from_env_rejects_empty_target_langs(monkeypatch):
@@ -49,7 +49,7 @@ def test_invalid_workers_falls_back_to_default(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
     assert cfg.workers == 1
-    assert "Invalid WORKERS" in caplog.text
+    assert "invalid WORKERS" in caplog.text
 
 
 def test_invalid_retry_count_falls_back_to_default(monkeypatch, caplog):
@@ -57,7 +57,7 @@ def test_invalid_retry_count_falls_back_to_default(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
     assert cfg.retry_count == 3
-    assert "Invalid RETRY_COUNT" in caplog.text
+    assert "invalid RETRY_COUNT" in caplog.text
 
 
 def test_invalid_backoff_delay_falls_back_to_default(monkeypatch, caplog):
@@ -65,7 +65,7 @@ def test_invalid_backoff_delay_falls_back_to_default(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
     assert cfg.backoff_delay == 1.0
-    assert "Invalid BACKOFF_DELAY" in caplog.text
+    assert "invalid BACKOFF_DELAY" in caplog.text
 
 
 def test_invalid_debounce_falls_back_to_default(monkeypatch, caplog):
@@ -73,7 +73,7 @@ def test_invalid_debounce_falls_back_to_default(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
     assert cfg.debounce == 0.1
-    assert "Invalid DEBOUNCE_SECONDS" in caplog.text
+    assert "invalid DEBOUNCE_SECONDS" in caplog.text
 
 
 def test_invalid_scan_interval_falls_back_to_default(monkeypatch, caplog):
@@ -81,7 +81,7 @@ def test_invalid_scan_interval_falls_back_to_default(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
     assert cfg.scan_interval_minutes == 60
-    assert "Invalid SCAN_INTERVAL_MINUTES" in caplog.text
+    assert "invalid SCAN_INTERVAL_MINUTES" in caplog.text
 
 
 def test_persistent_sessions_flag(monkeypatch):
