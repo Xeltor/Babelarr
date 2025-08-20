@@ -56,23 +56,23 @@ class Config:
         for lang in raw_langs:
             cleaned = lang.strip()
             if not cleaned:
-                logger.warning("Empty language code in TARGET_LANGS; ignoring")
+                logger.warning("ignore empty language code in TARGET_LANGS")
                 continue
             if not cleaned.isalpha():
                 logger.warning(
-                    "Invalid language code '%s' in TARGET_LANGS; ignoring", cleaned
+                    "ignore invalid language code '%s' in TARGET_LANGS", cleaned
                 )
                 continue
             normalized = cleaned.lower()
             if normalized in seen:
                 logger.debug(
-                    "Duplicate language code '%s' in TARGET_LANGS; ignoring", cleaned
+                    "ignore duplicate language code '%s' in TARGET_LANGS", cleaned
                 )
                 continue
             target_langs.append(normalized)
             seen.add(normalized)
         if not target_langs:
-            logger.error("No valid languages found in TARGET_LANGS")
+            logger.error("found no valid languages in TARGET_LANGS")
             raise ValueError(
                 "TARGET_LANGS must contain at least one valid language code",
             )
@@ -87,15 +87,15 @@ class Config:
             requested = int(raw_workers)
         except ValueError:
             logger.warning(
-                "Invalid WORKERS '%s'; defaulting to %s", raw_workers, default_workers
+                "use default %s for invalid WORKERS '%s'", default_workers, raw_workers
             )
             requested = default_workers
         workers = min(requested, MAX_WORKERS)
         if requested > MAX_WORKERS:
             logger.warning(
-                "Requested %s workers, capping at %s to prevent instability",
-                requested,
+                "cap workers at %s to prevent instability (requested %s)",
                 MAX_WORKERS,
+                requested,
             )
         return workers
 
@@ -107,9 +107,9 @@ class Config:
             return int(raw_scan)
         except ValueError:
             logger.warning(
-                "Invalid SCAN_INTERVAL_MINUTES '%s'; defaulting to %s",
-                raw_scan,
+                "use default %s for invalid SCAN_INTERVAL_MINUTES '%s'",
                 default_scan_interval,
+                raw_scan,
             )
             return default_scan_interval
 
@@ -119,7 +119,12 @@ class Config:
         try:
             return int(raw_val)
         except ValueError:
-            logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+            logger.warning(
+                "use default %s for invalid %s '%s'",
+                default,
+                name,
+                raw_val,
+            )
             return default
 
     @staticmethod
@@ -128,7 +133,12 @@ class Config:
         try:
             return float(raw_val)
         except ValueError:
-            logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+            logger.warning(
+                "use default %s for invalid %s '%s'",
+                default,
+                name,
+                raw_val,
+            )
             return default
 
     @staticmethod
@@ -140,7 +150,12 @@ class Config:
                 return True
             if lowered in {"0", "false", "no", "off"}:
                 return False
-        logger.warning("Invalid %s '%s'; defaulting to %s", name, raw_val, default)
+        logger.warning(
+            "use default %s for invalid %s '%s'",
+            default,
+            name,
+            raw_val,
+        )
         return default
 
     @classmethod
@@ -149,7 +164,7 @@ class Config:
 
         src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
         if not src_lang.isalpha():
-            logger.warning("Invalid SRC_LANG '%s'; defaulting to 'en'", src_lang)
+            logger.warning("use default 'en' for invalid SRC_LANG '%s'", src_lang)
             src_lang = "en"
         src_ext = f".{src_lang}.srt"
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
