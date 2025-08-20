@@ -48,7 +48,11 @@ class LibreTranslateAPI:
         """Return the languages supported by the server."""
 
         url = self.base_url + "/languages"
-        resp = self.session.get(url, timeout=self.http_timeout)
+        if self.persistent_session:
+            resp = self.session.get(url, timeout=self.http_timeout)
+        else:
+            headers = {"Connection": "close"}
+            resp = requests.get(url, timeout=self.http_timeout, headers=headers)
         resp.raise_for_status()
         return resp.json()
 

@@ -7,9 +7,50 @@ from babelarr.libretranslate_api import LibreTranslateAPI
 
 
 def test_fetch_languages(monkeypatch):
+    calls: list[dict | None] = []
+
+    def fake_get(url, *, timeout, headers=None):
+        assert url == "http://only/languages"
+        assert timeout == 30
+        calls.append(headers)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"[]"
+        return resp
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    api = LibreTranslateAPI("http://only")
+    languages = api.fetch_languages()
+
+    assert languages == []
+    assert calls == [{"Connection": "close"}]
+
+    asyncio.run(api.close())
+
+
+def test_fetch_languages_error(monkeypatch):
+    def fake_get(url, *, timeout, headers=None):
+        assert timeout == 30
+        raise requests.ConnectionError("boom")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    api = LibreTranslateAPI("http://only")
+
+    with pytest.raises(requests.ConnectionError):
+        api.fetch_languages()
+
+    asyncio.run(api.close())
+
+
+def test_fetch_languages_persistent_session(monkeypatch):
+    sessions = []
+
     def fake_get(self, url, *, timeout):
         assert url == "http://only/languages"
         assert timeout == 30
+        sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"[]"
@@ -17,25 +58,11 @@ def test_fetch_languages(monkeypatch):
 
     monkeypatch.setattr(requests.Session, "get", fake_get)
 
-    api = LibreTranslateAPI("http://only")
-    languages = api.fetch_languages()
+    api = LibreTranslateAPI("http://only", persistent_session=True)
+    api.fetch_languages()
+    api.fetch_languages()
 
-    assert languages == []
-
-    asyncio.run(api.close())
-
-
-def test_fetch_languages_error(monkeypatch):
-    def fake_get(self, url, *, timeout):
-        assert timeout == 30
-        raise requests.ConnectionError("boom")
-
-    monkeypatch.setattr(requests.Session, "get", fake_get)
-
-    api = LibreTranslateAPI("http://only")
-
-    with pytest.raises(requests.ConnectionError):
-        api.fetch_languages()
+    assert len(set(sessions)) == 1
 
     asyncio.run(api.close())
 
