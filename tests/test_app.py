@@ -318,3 +318,30 @@ def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
 
     assert triggered == [tmp_path]
     assert caplog.text.count("trigger_jellyfin_scan") == 1
+
+
+def test_worker_logs_outcome_before_jellyfin_refresh(tmp_path, app, caplog):
+    src = tmp_path / "video.en.srt"
+    src.write_text("hello")
+
+    class DummyJellyfin:
+        def refresh_path(self, path: Path) -> None:  # pragma: no cover - trivial
+            pass
+
+    instance = app(jellyfin=DummyJellyfin())
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(worker_module.worker, instance)
+        with caplog.at_level(logging.INFO):
+            instance.enqueue(src)
+            instance.tasks.join()
+            instance.shutdown_event.set()
+
+    messages = [record.message for record in caplog.records]
+    outcome_idx = next(
+        i for i, msg in enumerate(messages) if msg.startswith("translation outcome")
+    )
+    refresh_idx = next(
+        i for i, msg in enumerate(messages) if msg.startswith("trigger_jellyfin_scan")
+    )
+    assert outcome_idx < refresh_idx
