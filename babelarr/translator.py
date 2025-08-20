@@ -88,7 +88,7 @@ class LibreTranslateClient:
                 except requests.RequestException as exc:
                     logger.warning("fetch_languages_failed error=%s", exc)
                 else:
-                    logger.info("translator: service_available")
+                    logger.info("service_available")
                     return
             logger.warning(
                 "service_unreachable retry=%s",
@@ -108,7 +108,7 @@ class LibreTranslateClient:
             raise ValueError(f"Unsupported source language: {self.src_lang}")
         self.supported_targets = self.languages[self.src_lang]
         logger.info(
-            "translator: languages_loaded count=%d",
+            "languages_loaded count=%d",
             len(self.supported_targets),
         )
 
