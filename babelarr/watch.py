@@ -20,6 +20,7 @@ class SrtHandler(PatternMatchingEventHandler):
         self._debounce = self.app.config.debounce
         self._max_wait = 30
         self._recent: dict[Path, float] = {}
+        self._last_prune = 0.0
         super().__init__(
             patterns=[f"*{self.app.config.src_ext}"],
             ignore_directories=True,
@@ -50,10 +51,12 @@ class SrtHandler(PatternMatchingEventHandler):
 
     def _handle(self, path: Path) -> None:
         now = time.monotonic()
-        # prune expired entries
-        for p, ts in list(self._recent.items()):
-            if now - ts > self._debounce:
-                del self._recent[p]
+        # prune expired entries at most once per debounce interval
+        if now - self._last_prune > self._debounce:
+            for p, ts in list(self._recent.items()):
+                if now - ts > self._debounce:
+                    del self._recent[p]
+            self._last_prune = now
 
         last = self._recent.get(path)
         if last and now - last < self._debounce:
