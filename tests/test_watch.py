@@ -22,6 +22,7 @@ def test_srt_handler_patterns(app):
     handler = SrtHandler(app_instance)
     assert handler.patterns == [f"*{app_instance.config.src_ext}"]
     assert handler.ignore_directories
+    assert handler._max_wait == app_instance.config.stabilize_timeout
 
 
 def test_srt_handler_enqueue(monkeypatch, tmp_path, app):
@@ -215,6 +216,7 @@ def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
     called = {}
     app_instance = app()
     app_instance.config.debounce = 0.01
+    app_instance.config.stabilize_timeout = 0.05
 
     def fake_enqueue(p):
         called["path"] = p
@@ -222,7 +224,6 @@ def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
     monkeypatch.setattr(app_instance, "enqueue", fake_enqueue)
 
     handler = SrtHandler(app_instance)
-    handler._max_wait = 0.05
 
     from itertools import count
     from types import SimpleNamespace
