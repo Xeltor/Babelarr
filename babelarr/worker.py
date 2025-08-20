@@ -139,18 +139,21 @@ def worker(app: Application, idle_timeout: float = 30 * 60) -> None:
             if requeue:
                 app.tasks.put((task.priority, app._task_counter, task))
                 app._task_counter += 1
+            else:
+                app.db.remove(path, lang)
+            queue_len = app.db.count()
+            if requeue:
                 tlog.info(
                     "worker_requeue name=%s queue=%d",
                     name,
-                    app.db.count(),
+                    queue_len,
                 )
             else:
-                app.db.remove(path, lang)
                 tlog.info(
                     "translation outcome=%s duration=%.2fs queue=%d",
                     outcome,
                     elapsed,
-                    app.db.count(),
+                    queue_len,
                 )
                 if app.jellyfin:
                     app.translation_done(path, lang)
