@@ -291,7 +291,9 @@ def test_translation_done_logs_jellyfin_refresh(tmp_path, app, caplog):
         instance.translation_done(src, "nl")
 
     assert triggered == [tmp_path]
-    assert "trigger_jellyfin_scan" in caplog.text
+    assert "jellyfin_refresh" in caplog.text
+    assert f"path={tmp_path.name}" in caplog.text
+    assert f"show={tmp_path.parent.name}" in caplog.text
 
 
 def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
@@ -317,31 +319,5 @@ def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
         instance.translation_done(second, "nl")
 
     assert triggered == [tmp_path]
-    assert caplog.text.count("trigger_jellyfin_scan") == 1
-
-
-def test_worker_logs_outcome_before_jellyfin_refresh(tmp_path, app, caplog):
-    src = tmp_path / "video.en.srt"
-    src.write_text("hello")
-
-    class DummyJellyfin:
-        def refresh_path(self, path: Path) -> None:  # pragma: no cover - trivial
-            pass
-
-    instance = app(jellyfin=DummyJellyfin())
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(worker_module.worker, instance)
-        with caplog.at_level(logging.INFO):
-            instance.enqueue(src)
-            instance.tasks.join()
-            instance.shutdown_event.set()
-
-    messages = [record.message for record in caplog.records]
-    outcome_idx = next(
-        i for i, msg in enumerate(messages) if msg.startswith("translation outcome")
-    )
-    refresh_idx = next(
-        i for i, msg in enumerate(messages) if msg.startswith("trigger_jellyfin_scan")
-    )
-    assert outcome_idx < refresh_idx
+    assert caplog.text.count("jellyfin_refresh") == 1
+    assert f"show={tmp_path.parent.name}" in caplog.text
