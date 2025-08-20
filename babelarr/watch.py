@@ -18,7 +18,7 @@ class SrtHandler(PatternMatchingEventHandler):
     def __init__(self, app: Application):
         self.app = app
         self._debounce = self.app.config.debounce
-        self._max_wait = 30
+        self._max_wait = self.app.config.stabilize_timeout
         self._recent: dict[Path, float] = {}
         self._last_prune = 0.0
         super().__init__(

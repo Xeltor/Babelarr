@@ -66,6 +66,7 @@ docker run -d --name babelarr \
 | `RETRY_COUNT` | `3` | Translation retry attempts. |
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
 | `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
+| `STABILIZE_TIMEOUT` | `30` | Max seconds to wait for a subtitle file to stop growing before enqueueing. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 | `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
 | `HTTP_TIMEOUT` | `30` | Timeout in seconds for non-translation HTTP requests. |

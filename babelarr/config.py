@@ -26,6 +26,7 @@ class Config:
         retry_count: Translation retry attempts.
         backoff_delay: Initial backoff delay between retries.
         debounce: Seconds to wait for file changes to settle before enqueueing.
+        stabilize_timeout: Max seconds to wait for file size to stabilize.
         scan_interval_minutes: Interval between periodic full scans.
     """
 
@@ -43,6 +44,7 @@ class Config:
     backoff_delay: float = 1.0
     availability_check_interval: float = 30.0
     debounce: float = 0.1
+    stabilize_timeout: float = 30.0
     scan_interval_minutes: int = 60
     http_timeout: float = 30.0
     translation_timeout: float = 900.0
@@ -186,6 +188,9 @@ class Config:
                 "AVAILABILITY_CHECK_INTERVAL", v, 30.0
             ),
             "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
+            "STABILIZE_TIMEOUT": lambda v: cls._parse_float(
+                "STABILIZE_TIMEOUT", v, 30.0
+            ),
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
             "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 30.0),
             "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
@@ -206,6 +211,7 @@ class Config:
         backoff_delay = parsed["BACKOFF_DELAY"]
         availability_check_interval = parsed["AVAILABILITY_CHECK_INTERVAL"]
         debounce = parsed["DEBOUNCE_SECONDS"]
+        stabilize_timeout = parsed["STABILIZE_TIMEOUT"]
         scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
         http_timeout = parsed["HTTP_TIMEOUT"]
         translation_timeout = parsed["TRANSLATION_TIMEOUT"]
@@ -215,7 +221,7 @@ class Config:
             "loaded config root_dirs=%s target_langs=%s src_lang=%s api_url=%s "
             "workers=%s queue_db=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
-            "persistent_sessions=%s http_timeout=%s translation_timeout=%s",
+            "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -229,6 +235,7 @@ class Config:
             backoff_delay,
             availability_check_interval,
             debounce,
+            stabilize_timeout,
             scan_interval_minutes,
             persistent_sessions,
             http_timeout,
@@ -250,6 +257,7 @@ class Config:
             backoff_delay=backoff_delay,
             availability_check_interval=availability_check_interval,
             debounce=debounce,
+            stabilize_timeout=stabilize_timeout,
             scan_interval_minutes=scan_interval_minutes,
             http_timeout=http_timeout,
             translation_timeout=translation_timeout,
