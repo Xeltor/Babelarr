@@ -291,7 +291,9 @@ def test_translation_done_logs_jellyfin_refresh(tmp_path, app, caplog):
         instance.translation_done(src, "nl")
 
     assert triggered == [tmp_path]
-    assert "trigger_jellyfin_scan" in caplog.text
+    assert "jellyfin_refresh" in caplog.text
+    assert f"path={tmp_path.name}" in caplog.text
+    assert f"show={tmp_path.parent.name}" in caplog.text
 
 
 def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
@@ -317,4 +319,5 @@ def test_translation_done_refreshes_once_per_folder(tmp_path, app, caplog):
         instance.translation_done(second, "nl")
 
     assert triggered == [tmp_path]
-    assert caplog.text.count("trigger_jellyfin_scan") == 1
+    assert caplog.text.count("jellyfin_refresh") == 1
+    assert f"show={tmp_path.parent.name}" in caplog.text

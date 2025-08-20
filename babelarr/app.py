@@ -101,7 +101,9 @@ class Application:
         if self.jellyfin:
             try:
                 self.jellyfin.refresh_path(folder)
-                TranslationLogger(folder, lang).info("trigger_jellyfin_scan")
+                TranslationLogger(folder, lang).info(
+                    "jellyfin_refresh show=%s", folder.parent.name
+                )
             except Exception as exc:  # noqa: BLE001
                 TranslationLogger(folder, lang).error(
                     "jellyfin_refresh_failed error=%s", exc
