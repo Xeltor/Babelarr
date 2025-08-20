@@ -300,6 +300,22 @@ def test_worker_wait_called_once(app):
     assert calls["count"] == 1
 
 
+def test_idle_worker_shuts_down_after_timeout(app):
+    instance = app()
+    thread = threading.Thread(
+        target=worker_module.worker,
+        args=(instance,),
+        kwargs={"idle_timeout": 0.2},
+    )
+    with instance._worker_lock:
+        instance._active_workers += 1
+        instance._worker_threads.add(thread)
+    thread.start()
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert instance._active_workers == 0
+
+
 def test_get_task_returns_task_or_none(tmp_path, app):
     instance = app()
     task = TranslationTask(tmp_path / "video.en.srt", "nl", "1")
