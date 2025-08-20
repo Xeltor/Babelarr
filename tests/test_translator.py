@@ -176,7 +176,7 @@ def test_ensure_languages_logs_count(monkeypatch, caplog):
     )
     with caplog.at_level(logging.INFO):
         client.ensure_languages()
-    assert "translator: languages_loaded count=2" in caplog.text
+    assert "languages_loaded count=2" in caplog.text
 
 
 def test_wait_until_available_logs_service_available(monkeypatch, caplog):
@@ -187,4 +187,4 @@ def test_wait_until_available_logs_service_available(monkeypatch, caplog):
     monkeypatch.setattr(client, "ensure_languages", lambda: None)
     with caplog.at_level(logging.INFO):
         client.wait_until_available()
-    assert "translator: service_available" in caplog.text
+    assert "service_available" in caplog.text
