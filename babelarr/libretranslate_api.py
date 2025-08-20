@@ -93,8 +93,8 @@ class LibreTranslateAPI:
         headers = {"Connection": "close"}
         return requests.get(url, timeout=self.http_timeout, headers=headers)
 
-    async def close(self) -> None:
-        """Asynchronously close the thread-local session for this thread."""
+    def close(self) -> None:
+        """Close the thread-local session for this thread."""
 
         session = getattr(self._local, "session", None)
         if session:
