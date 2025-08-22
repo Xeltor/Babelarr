@@ -1,6 +1,7 @@
 import functools
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -262,6 +263,60 @@ def test_workers_spawn_and_exit(tmp_path, app, caplog, monkeypatch):
         t.join(timeout=1)
 
     assert instance._active_workers == 0
+
+
+def test_worker_limit_enforced_and_threads_exit(tmp_path, app, monkeypatch):
+    cfg = Config(
+        root_dirs=[str(tmp_path)],
+        target_langs=["nl"],
+        src_lang="en",
+        src_ext=".en.srt",
+        api_url="http://example",
+        workers=2,
+        queue_db=str(tmp_path / "queue.db"),
+    )
+
+    start = threading.Event()
+    active_counts: list[int] = []
+
+    import babelarr.app as app_module
+
+    original_get_task = worker_module.get_task
+
+    def blocking_get_task(app_instance):
+        start.wait()
+        return original_get_task(app_instance)
+
+    monkeypatch.setattr(worker_module, "get_task", blocking_get_task)
+
+    def recording_worker(app_instance):
+        active_counts.append(app_instance._active_workers)
+        worker_module.worker(app_instance, idle_timeout=0.1)
+
+    monkeypatch.setattr(app_module, "worker_loop", recording_worker)
+
+    instance = app(cfg=cfg)
+
+    for i in range(5):
+        src = tmp_path / f"video{i}.en.srt"
+        src.write_text("hello")
+        instance.enqueue(src)
+
+    for _ in range(20):
+        if len(active_counts) == cfg.workers:
+            break
+        time.sleep(0.05)
+    assert len(active_counts) == cfg.workers
+    assert instance._active_workers == cfg.workers
+
+    start.set()
+    instance.tasks.join()
+    for t in list(instance._worker_threads):
+        t.join(timeout=1)
+
+    assert max(active_counts) == cfg.workers
+    assert instance._active_workers == 0
+    assert not instance._worker_threads
 
 
 def test_translate_file_does_not_refresh_jellyfin(tmp_path, app):
