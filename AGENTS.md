@@ -16,14 +16,17 @@ Only open/update the PR if **all** steps succeed. Otherwise, fix and re-run `mak
 - `main.py`
   - Thin entrypoint that calls `babelarr.cli.main()`. Do not add logic here.
 - `babelarr/`
-  - `app.py` → Application orchestration, filesystem watcher, worker pool, queueing.
+  - `app.py` → Application orchestration only.
   - `cli.py` → CLI startup, environment validation, logging config, signal handling.
   - `config.py` → All environment/config parsing (`Config.from_env()`).
+  - `jellyfin_api.py` → Jellyfin refresh client.
   - `libretranslate_api.py` → Thin HTTP wrapper around LibreTranslate; manages raw
     requests and thread-local sessions. Consumed by `translator.py`, which handles
     translation logic, retries, and backoff.
   - `queue_db.py` → SQLite queue repository; thread-safe access to queued paths.
   - `translator.py` → `Translator` protocol and `LibreTranslateClient` implementation (retries/backoff).
+  - `watch.py` → Filesystem watcher with debounce.
+  - `worker.py` → Translation worker loop and logging.
   - `__init__.py` → Public exports.
 - `tests/` → Pytest suite (unit tests by default; integration tests explicitly marked).
 - `Dockerfile` → Runtime container definition.
@@ -37,7 +40,10 @@ Only open/update the PR if **all** steps succeed. Otherwise, fix and re-run `mak
 ## Coding boundaries
 
 - **CLI (`cli.py`)**: only config parsing, env validation (including service reachability), logging setup, signal handling, and app bootstrap. No business logic here.
-- **Application (`app.py`)**: high-level orchestration: watchers, debouncing, queueing, worker threads, scheduling full scans. No direct HTTP/DB logic beyond using collaborators.
+- **Application (`app.py`)**: orchestrates modules and schedules scans; no direct HTTP/DB work.
+- **Watch (`watch.py`)**: filesystem monitoring and debouncing only.
+- **Worker (`worker.py`)**: processes translation tasks with contextual logging.
+- **Jellyfin (`jellyfin_api.py`)**: minimal HTTP client to refresh Jellyfin.
 - **Configuration (`config.py`)**: all env var parsing/validation and defaults. No other module should read `os.environ` directly.
 - **Queue (`queue_db.py`)**: SQLite queue persistence, thread-safe CRUD.
 - **Translator (`translator.py`)**: translation logic and HTTP calls to LibreTranslate with retries/backoff and optional download flow. No filesystem scanning or queue management here.
@@ -51,6 +57,7 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - Use `logging.getLogger("babelarr")` or `logging.getLogger(__name__)`; never use bare `print()` for runtime logs.
 - Fail fast on unrecoverable errors; raise typed exceptions in library code. Handle at the edges (CLI/app) with clear messages.
 - Network interactions must use timeouts and retries with exponential backoff where appropriate (see `LibreTranslateClient`).
+- For translation-related logs (e.g., per-file translation progress), use `TranslationLogger` (see `worker.py`).
 
 ### Logging conventions
 
@@ -65,6 +72,7 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - All new/changed behavior must have unit tests under `tests/`, mirroring module names (`test_<module>.py`).
 - Keep unit tests fast and hermetic (no network or real filesystem where avoidable).
 - Mark slower or external tests as integration: `@pytest.mark.integration`. Unit suite must pass by default without special env.
+- Example: `watch.py` and `worker.py` tests use `pytest.mark.integration`.
 - When fixing a bug, first add a failing test that reproduces it; then implement the fix.
 - Target coverage for new/changed code: **≥85%** (enforce in CI if/when coverage tooling is added).
 
