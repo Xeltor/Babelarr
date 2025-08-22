@@ -167,6 +167,8 @@ def worker(app: Application, idle_timeout: float = 30 * 60) -> None:
         with app._worker_lock:
             app._active_workers -= 1
             app._worker_threads.discard(threading.current_thread())
+            if name in getattr(app, "_worker_name_pool", set()):
+                app._available_worker_names.add(name)
             logger.info(
                 "worker_exit name=%s active=%d",
                 name,

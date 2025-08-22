@@ -319,6 +319,62 @@ def test_worker_limit_enforced_and_threads_exit(tmp_path, app, monkeypatch):
     assert not instance._worker_threads
 
 
+def test_workers_use_unique_names_and_recycle(tmp_path, app, config):
+    config.workers = 2
+    src1 = tmp_path / "one.en.srt"
+    src2 = tmp_path / "two.en.srt"
+    src1.write_text("a")
+    src2.write_text("b")
+
+    class RecordingTranslator:
+        def __init__(self):
+            self.names: list[str] = []
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def translate(self, path, lang):  # pragma: no cover - simple
+            self.names.append(threading.current_thread().name)
+            if len(self.names) == 2:
+                self.started.set()
+            self.release.wait()
+            return b""
+
+        def wait_until_available(self):  # pragma: no cover - simple
+            return None
+
+    translator = RecordingTranslator()
+    instance = app(cfg=config, translator=translator)
+
+    original_ensure = instance._ensure_workers
+    instance._ensure_workers = lambda: None
+    instance.enqueue(src1)
+    instance.enqueue(src2)
+    instance._ensure_workers = original_ensure
+
+    instance._ensure_workers()
+    assert translator.started.wait(timeout=1)
+
+    threads = list(instance._worker_threads)
+    used_names = set(translator.names)
+    assert len(used_names) == 2
+    assert used_names <= instance._worker_name_pool
+    assert instance._available_worker_names == instance._worker_name_pool - used_names
+
+    translator.release.set()
+    instance.tasks.join()
+    instance.shutdown_event.set()
+    for t in threads:
+        t.join(timeout=1)
+
+    assert instance._available_worker_names == instance._worker_name_pool
+
+
+def test_worker_name_pool_has_enough_names():
+    import babelarr.app as app_mod
+
+    assert len(app_mod.WORKER_NAMES) >= 10
+
+
 def test_translate_file_does_not_refresh_jellyfin(tmp_path, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
