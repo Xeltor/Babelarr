@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import random
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,19 @@ from .queue_db import QueueRepository
 from .translator import Translator
 from .worker import TranslationLogger, TranslationTask
 from .worker import worker as worker_loop
+
+WORKER_NAMES = [
+    "jerome",
+    "luther",
+    "garnett",
+    "rabassa",
+    "bellos",
+    "grossman",
+    "fitzgerald",
+    "venuti",
+    "pevear",
+    "volokhonsky",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +59,18 @@ class Application:
         self._worker_lock = threading.Lock()
         self._worker_threads: set[threading.Thread] = set()
         self._active_workers = 0
-        self._worker_counter = 0
         self._task_counter = 0
         self.scan_queue: queue.Queue[None] = queue.Queue()
         self._scan_thread: threading.Thread | None = None
+
+        self._worker_name_pool = set(WORKER_NAMES)
+        self._available_worker_names: set[str] = set(self._worker_name_pool)
+        if self.config.workers > len(self._worker_name_pool):
+            logger.warning(
+                "worker_name_pool_limit requested=%d available=%d",
+                self.config.workers,
+                len(self._worker_name_pool),
+            )
 
     def output_path(self, src: Path, lang: str) -> Path:
         """Return translation output path for *src* and *lang*.
@@ -243,10 +265,15 @@ class Application:
         Thread-safe via an internal lock.
         """
         with self._worker_lock:
-            needed = min(self.tasks.qsize(), self.config.workers) - self._active_workers
-            for _ in range(needed):
-                name = f"worker_{self._worker_counter}"
-                self._worker_counter += 1
+            capacity = min(
+                self.tasks.qsize(),
+                self.config.workers,
+                len(self._available_worker_names),
+            )
+            needed = capacity - self._active_workers
+            for _ in range(max(0, needed)):
+                name = random.choice(tuple(self._available_worker_names))
+                self._available_worker_names.remove(name)
                 thread = threading.Thread(target=worker_loop, args=(self,), name=name)
                 self._worker_threads.add(thread)
                 self._active_workers += 1
