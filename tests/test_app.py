@@ -55,7 +55,7 @@ def test_full_scan_logs_completion(tmp_path, caplog, app, monkeypatch):
     assert "scan_complete files=2" in caplog.text
 
 
-def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
+def test_request_scan_runs_on_foreman_thread(monkeypatch, app):
     instance = app()
     called: list[str] = []
 
@@ -64,14 +64,14 @@ def test_request_scan_runs_on_scanner_thread(monkeypatch, app):
 
     monkeypatch.setattr(instance, "full_scan", fake_full_scan)
 
-    thread = threading.Thread(target=instance.scan_worker, name="scanner")
+    thread = threading.Thread(target=instance.scan_worker, name="foreman")
     thread.start()
     instance.request_scan()
     instance.scan_queue.join()
     instance.shutdown_event.set()
     thread.join()
 
-    assert called == ["scanner"]
+    assert called == ["foreman"]
 
 
 def test_scan_tasks_lower_priority_than_watcher(tmp_path, app, monkeypatch):
