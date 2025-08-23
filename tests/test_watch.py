@@ -246,14 +246,24 @@ def test_srt_handler_timeout(monkeypatch, tmp_path, app, caplog):
 def test_watch_lifecycle(monkeypatch, tmp_path, app):
     app_instance = app()
 
-    events = {"start": False, "stop": False, "join": False, "scheduled": []}
+    events = {
+        "start": False,
+        "stop": False,
+        "join": False,
+        "scheduled": [],
+        "name": None,
+    }
 
     class FakeObserver:
+        def __init__(self):
+            self.name = "default"
+
         def schedule(self, handler, path, recursive):
             events["scheduled"].append((path, recursive))
 
         def start(self):
             events["start"] = True
+            events["name"] = self.name
 
         def stop(self):
             events["stop"] = True
@@ -272,6 +282,7 @@ def test_watch_lifecycle(monkeypatch, tmp_path, app):
 
     assert events["start"] and events["stop"] and events["join"]
     assert events["scheduled"] == [(str(tmp_path), True)]
+    assert events["name"] == "watchdog"
 
 
 def test_watch_missing_directory(monkeypatch, tmp_path, app, caplog):
