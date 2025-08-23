@@ -105,7 +105,7 @@ def worker(app: Application, idle_timeout: float = 30 * 60) -> None:
     """Process translation tasks until shutdown or *idle_timeout* elapses."""
 
     name = threading.current_thread().name
-    logger.debug("worker_start name=%s", name)
+    logger.info("hello i'm %s", name)
     wait = getattr(app.translator, "wait_until_available", None)
     if callable(wait):
         wait()
@@ -170,7 +170,7 @@ def worker(app: Application, idle_timeout: float = 30 * 60) -> None:
             if name in getattr(app, "_worker_name_pool", set()):
                 app._available_worker_names.add(name)
             logger.info(
-                "worker_exit name=%s active=%d",
+                "goodbye from %s active=%d",
                 name,
                 app._active_workers,
             )
