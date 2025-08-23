@@ -167,7 +167,7 @@ class Application:
             TranslationLogger(path).debug("skip reason=all_present")
 
     def request_scan(self) -> None:
-        """Signal the scanner thread to perform a full directory scan.
+        """Signal the foreman thread to perform a full directory scan.
 
         Non-blocking and safe to call from any thread.
         """
@@ -194,7 +194,7 @@ class Application:
     def full_scan(self) -> None:
         """Recursively scan roots and enqueue missing translations.
 
-        Blocking operation intended for the scanner thread.
+        Blocking operation intended for the foreman thread.
         """
         logger.info("scan_start")
         total = 0
@@ -227,14 +227,14 @@ class Application:
     def run(self) -> None:
         """Run the service until shutdown.
 
-        Starts worker, watcher, and scanner threads and blocks until
+        Starts worker, watcher, and foreman threads and blocks until
         ``shutdown_event`` is set.
         """
         self.load_pending()
         self.request_scan()
         schedule.every(self.config.scan_interval_minutes).minutes.do(self.request_scan)
 
-        self._scan_thread = threading.Thread(target=self.scan_worker, name="scanner")
+        self._scan_thread = threading.Thread(target=self.scan_worker, name="foreman")
         self._scan_thread.start()
 
         watcher = threading.Thread(
