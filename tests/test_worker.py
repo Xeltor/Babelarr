@@ -182,6 +182,26 @@ def test_worker_logs_processing_time(tmp_path, caplog, app):
     )
 
 
+def test_worker_logs_greeting_and_farewell(app, caplog):
+    instance = app()
+    name = next(iter(instance._available_worker_names))
+    thread = threading.Thread(
+        target=worker_module.worker,
+        args=(instance,),
+        kwargs={"idle_timeout": 0.1},
+        name=name,
+    )
+    with instance._worker_lock:
+        instance._active_workers += 1
+        instance._worker_threads.add(thread)
+        instance._available_worker_names.discard(name)
+    with caplog.at_level(logging.INFO):
+        thread.start()
+        thread.join(timeout=1)
+    assert any(r.message == f"hello i'm {name}" for r in caplog.records)
+    assert any(r.message == f"goodbye from {name} active=0" for r in caplog.records)
+
+
 def test_worker_translating_logged_as_debug(tmp_path, caplog, app):
     src = tmp_path / "video.en.srt"
     src.write_text("hello")
