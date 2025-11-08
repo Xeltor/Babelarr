@@ -9,6 +9,7 @@ import requests
 from .app import Application
 from .config import Config
 from .jellyfin_api import JellyfinClient
+from .mkv import MkvSubtitleExtractor, MkvSubtitleTagger
 from .queue_db import QueueRepository
 from .translator import LibreTranslateClient
 
@@ -150,7 +151,19 @@ def main(argv: list[str] | None = None) -> None:
         jellyfin_client = JellyfinClient(
             config.jellyfin_url, config.jellyfin_token, config.http_timeout
         )
-    app = Application(config, translator, jellyfin_client)
+    mkv_tagger = MkvSubtitleTagger(
+        extractor=MkvSubtitleExtractor(sample_bytes=config.mkv_sample_bytes),
+        translator=translator,
+        min_confidence=config.mkv_min_confidence,
+    )
+    logger.info(
+        "mkv_tagger_ready sample_bytes=%s min_confidence=%.2f cache_path=%s",
+        config.mkv_sample_bytes,
+        config.mkv_min_confidence,
+        config.mkv_cache_path,
+    )
+
+    app = Application(config, translator, jellyfin_client, mkv_tagger)
 
     def handle_signal(signum, frame):
         logger.info("received_signal signum=%s", signum)

@@ -89,6 +89,67 @@ class SrtHandler(PatternMatchingEventHandler):
         self._handle(dest)
 
 
+class MkvHandler(PatternMatchingEventHandler):
+    def __init__(self, app: Application):
+        self.app = app
+        self._debounce = self.app.config.debounce
+        self._max_wait = self.app.config.stabilize_timeout
+        self._recent: dict[Path, float] = {}
+        self._last_prune = 0.0
+        super().__init__(
+            patterns=["*.mkv"],
+            ignore_directories=True,
+        )
+
+    def _wait_for_complete(self, path: Path) -> bool:
+        start = time.monotonic()
+        while True:
+            try:
+                size = path.stat().st_size
+            except FileNotFoundError:
+                return False
+            time.sleep(self._debounce)
+            try:
+                new_size = path.stat().st_size
+            except FileNotFoundError:
+                return False
+            if new_size == size:
+                return True
+            if time.monotonic() - start > self._max_wait:
+                logger.warning("mkv_timeout_stabilize path=%s", path.name)
+                return False
+
+    def _handle(self, path: Path) -> None:
+        now = time.monotonic()
+        if now - self._last_prune > self._debounce:
+            for p, ts in list(self._recent.items()):
+                if now - ts > self._debounce:
+                    del self._recent[p]
+            self._last_prune = now
+
+        last = self._recent.get(path)
+        if last and now - last < self._debounce:
+            logger.debug("mkv_skip_recent path=%s age=%.2fs", path.name, now - last)
+            return
+
+        if self._wait_for_complete(path):
+            self._recent[path] = now
+            self.app.handle_new_mkv(path)
+
+    def on_created(self, event):
+        logger.debug("mkv_detect_new path=%s", Path(event.src_path).name)
+        self._handle(Path(event.src_path))
+
+    def on_moved(self, event):
+        dest = Path(event.dest_path)
+        logger.debug(
+            "mkv_detect_move src=%s dest=%s",
+            Path(event.src_path).name,
+            dest.name,
+        )
+        self._handle(dest)
+
+
 def watch(app: Application) -> None:
     """Launch a watchdog observer for all configured directories and block until shutdown."""
     observer = Observer()
@@ -100,6 +161,14 @@ def watch(app: Application) -> None:
             logger.warning("missing_directory path=%s", root_path.name)
             continue
         observer.schedule(SrtHandler(app), root, recursive=True)
+    if app.mkv_tagger and app.config.mkv_dirs:
+        for root in app.config.mkv_dirs:
+            logger.debug("watch_mkv path=%s", Path(root).name)
+            root_path = Path(root)
+            if not root_path.exists():
+                logger.warning("missing_mkv_directory path=%s", root_path.name)
+                continue
+            observer.schedule(MkvHandler(app), root, recursive=True)
     observer.start()
     logger.info("observer_started")
     try:

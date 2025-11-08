@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +37,12 @@ class Translator(Protocol):
 
     def wait_until_available(self) -> None:  # pragma: no cover - optional
         """Block until the translation service becomes available."""
+
+
+@dataclass(frozen=True)
+class DetectionResult:
+    language: str
+    confidence: float
 
 
 class LibreTranslateClient:
@@ -170,6 +177,60 @@ class LibreTranslateClient:
         if download_url:
             return self._retrieve_download(download_url)
         return resp.content
+
+    def detect_language(
+        self,
+        text: str | bytes,
+        *,
+        min_confidence: float = 0.0,
+    ) -> DetectionResult | None:
+        """Detect the language for *text* and return the best match.
+
+        Returns ``None`` if the sample is empty or no detection meets
+        ``min_confidence``.
+        """
+
+        sample = text.decode("utf-8", errors="ignore") if isinstance(text, bytes) else text
+        sample = sample.strip()
+        if not sample:
+            logger.debug("detect_skip reason=empty_sample")
+            return None
+
+        resp = self.api.detect(sample)
+        self._handle_error_response(resp, "LibreTranslate detect")
+        try:
+            payload = resp.json()
+        except ValueError as exc:  # pragma: no cover - API bug
+            raise ValueError("Invalid detection response") from exc
+
+        best: DetectionResult | None = None
+        if isinstance(payload, list):
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                lang = str(item.get("language", "")).strip().lower()
+                if not lang:
+                    continue
+                try:
+                    confidence = float(item.get("confidence", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                candidate = DetectionResult(lang, confidence)
+                if best is None or candidate.confidence > best.confidence:
+                    best = candidate
+        else:  # pragma: no cover - defensive
+            raise ValueError("Unexpected detection payload")
+
+        if best and best.confidence >= min_confidence:
+            logger.debug(
+                "detect_result language=%s confidence=%.3f",
+                best.language,
+                best.confidence,
+            )
+            return best
+
+        logger.debug("detect_skip reason=no_match threshold=%.3f", min_confidence)
+        return None
 
     def translate(self, path: Path, lang: str) -> bytes:
         self.ensure_languages()

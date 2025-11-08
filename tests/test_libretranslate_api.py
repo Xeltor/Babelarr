@@ -137,6 +137,29 @@ def test_download_uses_connection_close(monkeypatch):
     api.close()
 
 
+def test_detect_uses_connection_close(monkeypatch):
+    calls: list[dict | None] = []
+
+    def fake_post(url, *, data=None, timeout, headers=None):
+        assert url == "http://only/detect"
+        assert timeout == 30
+        assert data == {"q": "hello"}
+        calls.append(headers)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"[]"
+        return resp
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    api = LibreTranslateAPI("http://only")
+    resp = api.detect("hello")
+    assert resp.status_code == 200
+    assert calls == [{"Connection": "close"}]
+
+    api.close()
+
+
 def test_translate_file_persistent_session(monkeypatch, tmp_path):
     tmp_file = tmp_path / "c.srt"
     tmp_file.write_text("dummy")
@@ -156,6 +179,29 @@ def test_translate_file_persistent_session(monkeypatch, tmp_path):
     api = LibreTranslateAPI("http://only", persistent_session=True)
     api.translate_file(tmp_file, "en", "nl")
     api.translate_file(tmp_file, "en", "nl")
+
+    assert len(set(sessions)) == 1
+
+    api.close()
+
+
+def test_detect_persistent_session(monkeypatch):
+    sessions = []
+
+    def fake_post(self, url, *, data=None, timeout, headers=None):
+        assert url == "http://only/detect"
+        assert timeout == 30
+        sessions.append(id(self))
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"[]"
+        return resp
+
+    monkeypatch.setattr(requests.Session, "post", fake_post)
+
+    api = LibreTranslateAPI("http://only", persistent_session=True)
+    api.detect("hello")
+    api.detect("world")
 
     assert len(set(sessions)) == 1
 

@@ -72,6 +72,11 @@ docker run -d --name babelarr \
 | `HTTP_TIMEOUT` | `30` | Timeout in seconds for non-translation HTTP requests. |
 | `TRANSLATION_TIMEOUT` | `900` | Timeout in seconds for translation requests. |
 | `QUEUE_DB` | `/config/queue.db` | Path to the SQLite queue database. |
+| `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
+| `MKV_SCAN_INTERVAL_MINUTES` | `180` | Minutes between MKV rescans. |
+| `MKV_SAMPLE_BYTES` | `8192` | Maximum bytes to sample from each subtitle stream before detection. |
+| `MKV_MIN_CONFIDENCE` | `0.85` | Minimum LibreTranslate confidence required before applying a language tag. |
+| `MKV_CACHE_PATH` | `/config/mkv-cache.json` | Location of the JSON cache that tracks processed MKV files. |
 
 If `TARGET_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup.
 

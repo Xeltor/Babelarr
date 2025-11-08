@@ -28,6 +28,10 @@ class Config:
         debounce: Seconds to wait for file changes to settle before enqueueing.
         stabilize_timeout: Max seconds to wait for file size to stabilize.
         scan_interval_minutes: Interval between periodic full scans.
+        mkv_scan_interval_minutes: Interval between MKV rescans.
+        mkv_sample_bytes: Max bytes to sample from subtitle streams.
+        mkv_min_confidence: Minimum confidence required for tagging.
+        mkv_cache_path: Path to persisted MKV processing state.
     """
 
     root_dirs: list[str]
@@ -49,6 +53,11 @@ class Config:
     http_timeout: float = 30.0
     translation_timeout: float = 900.0
     persistent_sessions: bool = False
+    mkv_scan_interval_minutes: int = 180
+    mkv_sample_bytes: int = 8192
+    mkv_min_confidence: float = 0.85
+    mkv_cache_path: str = "/config/mkv-cache.json"
+    mkv_dirs: list[str] | None = None
 
     @staticmethod
     def _parse_target_languages(raw: str | None) -> list[str]:
@@ -174,6 +183,13 @@ class Config:
         queue_db_path = Path(os.environ.get("QUEUE_DB", "/config/queue.db"))
         queue_db_path.parent.mkdir(parents=True, exist_ok=True)
         queue_db = str(queue_db_path)
+        default_mkv_cache = queue_db_path.parent / "mkv-cache.json"
+        mkv_cache_raw = os.environ.get("MKV_CACHE_PATH")
+        mkv_cache_path = Path(mkv_cache_raw) if mkv_cache_raw else default_mkv_cache
+        mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        mkv_dirs = [
+            p for p in (os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")).split(":") if p
+        ]
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
         jellyfin_url = os.environ.get("JELLYFIN_URL") or None
@@ -199,6 +215,15 @@ class Config:
             "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
                 "PERSISTENT_SESSIONS", v, False
             ),
+            "MKV_SCAN_INTERVAL_MINUTES": lambda v: cls._parse_int(
+                "MKV_SCAN_INTERVAL_MINUTES", v, 180
+            ),
+            "MKV_SAMPLE_BYTES": lambda v: cls._parse_int(
+                "MKV_SAMPLE_BYTES", v, 8192
+            ),
+            "MKV_MIN_CONFIDENCE": lambda v: cls._parse_float(
+                "MKV_MIN_CONFIDENCE", v, 0.85
+            ),
         }
 
         parsed = {
@@ -216,12 +241,16 @@ class Config:
         http_timeout = parsed["HTTP_TIMEOUT"]
         translation_timeout = parsed["TRANSLATION_TIMEOUT"]
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
+        mkv_scan_interval_minutes = parsed["MKV_SCAN_INTERVAL_MINUTES"]
+        mkv_sample_bytes = parsed["MKV_SAMPLE_BYTES"]
+        mkv_min_confidence = parsed["MKV_MIN_CONFIDENCE"]
 
         logger.info(
             "loaded config root_dirs=%s target_langs=%s src_lang=%s api_url=%s "
             "workers=%s queue_db=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
-            "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s",
+            "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s mkv_scan_interval_minutes=%s "
+            "mkv_sample_bytes=%s mkv_min_confidence=%s mkv_cache_path=%s",
             root_dirs,
             target_langs,
             src_lang,
@@ -240,6 +269,10 @@ class Config:
             persistent_sessions,
             http_timeout,
             translation_timeout,
+            mkv_scan_interval_minutes,
+            mkv_sample_bytes,
+            mkv_min_confidence,
+            str(mkv_cache_path),
         )
 
         return cls(
@@ -262,4 +295,9 @@ class Config:
             http_timeout=http_timeout,
             translation_timeout=translation_timeout,
             persistent_sessions=persistent_sessions,
+            mkv_scan_interval_minutes=mkv_scan_interval_minutes,
+            mkv_sample_bytes=mkv_sample_bytes,
+            mkv_min_confidence=mkv_min_confidence,
+            mkv_cache_path=str(mkv_cache_path),
+            mkv_dirs=mkv_dirs,
         )

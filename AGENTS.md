@@ -179,4 +179,16 @@ When implementing changes:
 5. Run `make check`; fix all issues locally.
 6. Only then open/update the PR.
 
+---
+
+## Upcoming MKV subtitle-tagging plan
+
+- Scope: operate only on `.mkv` containers, since the media pipeline remuxes everything to Matroska. Ignore other formats entirely.
+- Detection: add a LibreTranslate `/detect` helper that sends a small subtitle sample (first ~8 KB) and yields language + confidence. Expose this via `LibreTranslateClient` with a configurable minimum confidence.
+- Extraction: wrap `ffprobe`/`ffmpeg` commands in a `VideoSubtitleExtractor` that lists subtitle tracks (`ffprobe -show_streams -select_streams s -of json file.mkv`) and emits short SRT samples per stream using `ffmpeg -map 0:s:<idx> -c copy -f srt -`.
+- Tagging: call `mkvpropedit file.mkv --edit track:s1 --set language=eng` (track index per stream) to update tags in place once the detected language differs from or is missing in the container metadata.
+- Scheduling: run a dedicated MKV scan worker (similar to `scan_worker`) that walks watch roots for `.mkv` files on a configurable cadence, enqueues subtitle tagging tasks, and respects shutdown signals.
+- Reprocessing guard: persist per-file metadata (path, `mtime_ns`, per-stream language hashes) in SQLite or a sidecar file; only reprocess when `mtime` increases or a new subtitle stream hash is observed.
+- Logging/tests: reuse `TranslationLogger` context keys (`video`, `stream`) for observability and add unit tests around detection, extractor parsing, cache skips, and tag command construction using fakes/mocks.
+
 If uncertain, prefer smaller, incremental PRs over broad changes.

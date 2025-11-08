@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 
@@ -187,3 +188,42 @@ def test_wait_until_available_logs_service_available(monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         client.wait_until_available()
     assert "service_available" in caplog.text
+
+
+def test_detect_language_returns_best_match(monkeypatch):
+    client = LibreTranslateClient("http://example", "en")
+    payload = [
+        {"language": "de", "confidence": 0.4},
+        {"language": "en", "confidence": 0.9},
+    ]
+
+    def fake_detect(sample):
+        assert sample == "sample text"
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps(payload).encode()
+        return resp
+
+    monkeypatch.setattr(client.api, "detect", fake_detect)
+
+    result = client.detect_language(" sample text ", min_confidence=0.5)
+    assert result is not None
+    assert result.language == "en"
+    assert result.confidence == pytest.approx(0.9)
+
+
+def test_detect_language_requires_threshold(monkeypatch):
+    client = LibreTranslateClient("http://example", "en")
+
+    def fake_detect(sample):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps(
+            [{"language": "es", "confidence": 0.2}]
+        ).encode()
+        return resp
+
+    monkeypatch.setattr(client.api, "detect", fake_detect)
+
+    result = client.detect_language("hola", min_confidence=0.5)
+    assert result is None
