@@ -21,7 +21,7 @@ class LibreTranslateAPI:
         self,
         base_url: str,
         *,
-        http_timeout: float = 30.0,
+        http_timeout: float = 180.0,
         translation_timeout: float = 900.0,
         persistent_session: bool = False,
     ) -> None:

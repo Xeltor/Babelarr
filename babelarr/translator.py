@@ -59,7 +59,7 @@ class LibreTranslateClient:
         availability_check_interval: float = 30.0,
         api_key: str | None = None,
         persistent_session: bool = False,
-        http_timeout: float = 30.0,
+        http_timeout: float = 180.0,
         translation_timeout: float = 900.0,
         max_concurrent_requests: int | None = 10,
     ) -> None:

@@ -48,7 +48,7 @@ class Config:
     debounce: float = 0.1
     stabilize_timeout: float = 30.0
     scan_interval_minutes: int = 60
-    http_timeout: float = 30.0
+    http_timeout: float = 180.0
     translation_timeout: float = 900.0
     libretranslate_max_concurrent_requests: int = 10
     persistent_sessions: bool = False
@@ -242,7 +242,7 @@ class Config:
                 "STABILIZE_TIMEOUT", v, 30.0
             ),
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
-            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 30.0),
+            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 180.0),
             "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
                 "TRANSLATION_TIMEOUT", v, 900.0
             ),

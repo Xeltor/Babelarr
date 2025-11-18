@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import tempfile
@@ -37,7 +38,7 @@ class MkvCache:
     def _ensure_schema(self) -> None:
         try:
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER)"
+                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT)"
             )
         except sqlite3.DatabaseError as exc:
             logger.warning(
@@ -52,8 +53,16 @@ class MkvCache:
                 str(self.path), check_same_thread=False, isolation_level=None
             )
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER)"
+                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT)"
             )
+        finally:
+            self._ensure_languages_column()
+
+    def _ensure_languages_column(self) -> None:
+        cursor = self._conn.execute("PRAGMA table_info(cache)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "languages" not in columns:
+            self._conn.execute("ALTER TABLE cache ADD COLUMN languages TEXT")
 
     def _execute(self, query: str, params: tuple = ()):
         with self._lock:
@@ -74,11 +83,33 @@ class MkvCache:
         logger.debug("get_cache path=%s result=%d", path, value)
         return value
 
-    def update(self, path: Path, mtime_ns: int) -> None:
+    def get_languages(self, path: Path) -> set[str]:
+        cursor = self._execute("SELECT languages FROM cache WHERE path = ?", (str(path),))
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return set()
+        try:
+            langs = json.loads(row[0])
+        except ValueError:
+            logger.warning("decode_languages_failed path=%s data=%s", path, row[0])
+            return set()
+        if not isinstance(langs, list):
+            return set()
+        return {str(entry) for entry in langs if isinstance(entry, str)}
+
+    def _encode_languages(self, languages: Iterable[str] | None) -> str | None:
+        if not languages:
+            return None
+        normalized = sorted({lang for lang in languages if lang})
+        if not normalized:
+            return None
+        return json.dumps(normalized)
+
+    def update(self, path: Path, mtime_ns: int, languages: Iterable[str] | None = None) -> None:
         self._execute(
-            "INSERT INTO cache (path, mtime_ns) VALUES (?, ?) "
-            "ON CONFLICT(path) DO UPDATE SET mtime_ns=excluded.mtime_ns",
-            (str(path), int(mtime_ns)),
+            "INSERT INTO cache (path, mtime_ns, languages) VALUES (?, ?, ?) "
+            "ON CONFLICT(path) DO UPDATE SET mtime_ns=excluded.mtime_ns, languages=excluded.languages",
+            (str(path), int(mtime_ns), self._encode_languages(languages)),
         )
         logger.debug("update_cache path=%s mtime_ns=%d", path, mtime_ns)
 
@@ -198,10 +229,12 @@ class MkvScanner:
                 self.cache.delete(path)
             return 0
         cache_state = "disabled"
+        cached_langs: set[str] = set()
         if self.cache:
             cached = self.cache.get_mtime(path)
+            cached_langs = self.cache.get_languages(path)
             cache_state = "cache_miss"
-            if cached == mtime_ns and not self._has_pending_targets(path, mtime_ns):
+            if cached == mtime_ns and not self._has_pending_targets(path, mtime_ns, cached_langs):
                 logger.debug("skip_cached path=%s", path.name)
                 return 0
         streams: list[SubtitleStream]
@@ -212,7 +245,8 @@ class MkvScanner:
             return 0
         self._ensure_tagged_streams(path, streams)
         language_candidates = self._map_streams_to_languages(path, streams)
-        translated = self._translate_missing(path, language_candidates, mtime_ns)
+        existing_langs = set(language_candidates.keys())
+        translated = self._translate_missing(path, language_candidates, mtime_ns, existing_langs)
         try:
             updated_mtime = path.stat().st_mtime_ns
         except FileNotFoundError:
@@ -220,7 +254,7 @@ class MkvScanner:
                 self.cache.delete(path)
             return translated
         if self.cache:
-            self.cache.update(path, updated_mtime)
+            self.cache.update(path, updated_mtime, languages=existing_langs)
             cache_state = "cache_updated"
         logger.info(
             "file_state path=%s streams=%d translated=%d cache=%s",
@@ -236,10 +270,11 @@ class MkvScanner:
         path: Path,
         candidates: dict[str, tuple[SubtitleStream, SubtitleMetrics]],
         mtime_ns: int,
+        existing_langs: set[str] | None,
     ) -> int:
         translated = 0
         for target_lang in self.ensure_langs:
-            if not self._needs_translation(path, target_lang, mtime_ns):
+            if not self._needs_translation(path, target_lang, mtime_ns, existing_langs):
                 continue
             source_lang, stream = self._pick_source_stream(candidates, target_lang)
             if not source_lang or not stream:
@@ -285,7 +320,15 @@ class MkvScanner:
             if detection:
                 stream.language = detection.language
 
-    def _needs_translation(self, path: Path, lang: str, mtime_ns: int) -> bool:
+    def _needs_translation(
+        self,
+        path: Path,
+        lang: str,
+        mtime_ns: int,
+        existing_langs: Iterable[str] | None = None,
+    ) -> bool:
+        if existing_langs and lang in existing_langs:
+            return False
         dest = self._subtitle_path(path, lang)
         if not dest.exists():
             return True
@@ -294,9 +337,14 @@ class MkvScanner:
         except FileNotFoundError:
             return True
 
-    def _has_pending_targets(self, path: Path, mtime_ns: int) -> bool:
+    def _has_pending_targets(
+        self,
+        path: Path,
+        mtime_ns: int,
+        existing_langs: Iterable[str] | None = None,
+    ) -> bool:
         for lang in self.ensure_langs:
-            if self._needs_translation(path, lang, mtime_ns):
+            if self._needs_translation(path, lang, mtime_ns, existing_langs):
                 return True
         return False
 

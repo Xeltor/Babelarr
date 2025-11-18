@@ -60,7 +60,7 @@ def test_is_available_uses_http_timeout(monkeypatch):
         status_code = 200
 
     def fake_head(self, url, *, timeout):
-        assert timeout == 30
+        assert timeout == 180
         return DummyResp()
 
     monkeypatch.setattr(requests.Session, "head", fake_head)

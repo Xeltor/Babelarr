@@ -9,7 +9,7 @@ def test_fetch_languages(monkeypatch):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://only/languages"
-        assert timeout == 30
+        assert timeout == 180
         calls.append(headers)
         resp = requests.Response()
         resp.status_code = 200
@@ -29,7 +29,7 @@ def test_fetch_languages(monkeypatch):
 
 def test_fetch_languages_error(monkeypatch):
     def fake_get(url, *, timeout, headers=None):
-        assert timeout == 30
+        assert timeout == 180
         raise requests.ConnectionError("boom")
 
     monkeypatch.setattr(requests, "get", fake_get)
@@ -47,7 +47,7 @@ def test_fetch_languages_persistent_session(monkeypatch):
 
     def fake_get(self, url, *, timeout):
         assert url == "http://only/languages"
-        assert timeout == 30
+        assert timeout == 180
         sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200
@@ -120,7 +120,7 @@ def test_download_uses_connection_close(monkeypatch):
     calls: list[dict | None] = []
 
     def fake_get(url, *, timeout, headers=None):
-        assert timeout == 30
+        assert timeout == 180
         calls.append(headers)
         resp = requests.Response()
         resp.status_code = 200
@@ -142,7 +142,7 @@ def test_detect_uses_connection_close(monkeypatch):
 
     def fake_post(url, *, data=None, timeout, headers=None):
         assert url == "http://only/detect"
-        assert timeout == 30
+        assert timeout == 180
         assert data == {"q": "hello"}
         calls.append(headers)
         resp = requests.Response()
@@ -190,7 +190,7 @@ def test_detect_persistent_session(monkeypatch):
 
     def fake_post(self, url, *, data=None, timeout, headers=None):
         assert url == "http://only/detect"
-        assert timeout == 30
+        assert timeout == 180
         sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200

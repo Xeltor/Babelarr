@@ -87,7 +87,7 @@ def test_retry_success(monkeypatch, tmp_path, caplog):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -125,7 +125,7 @@ def test_retry_exhaustion(monkeypatch, tmp_path, caplog):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -166,7 +166,7 @@ def test_api_key_included(monkeypatch, tmp_path):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -209,7 +209,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = (
@@ -251,7 +251,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
 
     def fake_get(url, *, timeout, headers=None):
         calls.append((url, timeout))
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         if url == "http://example/languages":
             resp.status_code = 200
@@ -286,7 +286,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
 def test_unsupported_source_language(monkeypatch):
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en", "nl"]}]'
@@ -304,7 +304,7 @@ def test_unsupported_target_language(monkeypatch, tmp_path):
 
     def fake_get(url, *, timeout, headers=None):
         assert url == "http://example/languages"
-        assert timeout == 30
+        assert timeout == 180
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'[{"code": "en", "targets": ["en"]}]'

@@ -69,7 +69,7 @@ docker run -d --name babelarr \
 | `STABILIZE_TIMEOUT` | `30` | Max seconds to wait for a subtitle file to stop growing before translating. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 | `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
-| `HTTP_TIMEOUT` | `30` | Timeout in seconds for non-translation HTTP requests. |
+| `HTTP_TIMEOUT` | `180` | Timeout in seconds for non-translation HTTP requests. |
 | `TRANSLATION_TIMEOUT` | `900` | Timeout in seconds for translation requests. |
 | `LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS` | `10` | Maximum number of LibreTranslate requests (translations or detections) allowed simultaneously. |
 | `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
