@@ -10,7 +10,6 @@ from .app import Application
 from .config import Config
 from .jellyfin_api import JellyfinClient
 from .mkv import MkvSubtitleExtractor, MkvSubtitleTagger
-from .queue_db import QueueRepository
 from .translator import LibreTranslateClient
 
 logger = logging.getLogger(__name__)
@@ -56,13 +55,8 @@ def validate_environment(config: Config) -> None:
         logger.error("service_unreachable url=%s error=%s", config.api_url, exc)
 
 
-def filter_target_languages(config: Config, translator: LibreTranslateClient) -> None:
-    """Remove unsupported target languages from *config*.
-
-    Fetches supported languages from *translator* and filters ``config.target_langs``
-    accordingly. Logs a warning for any ignored languages. Exits the process if no
-    supported languages remain.
-    """
+def validate_ensure_languages(config: Config, translator: LibreTranslateClient) -> None:
+    """Ensure every configured language can be produced by the service."""
 
     try:
         translator.ensure_languages()
@@ -73,21 +67,35 @@ def filter_target_languages(config: Config, translator: LibreTranslateClient) ->
         logger.error("fetch_languages_failed error=%s", exc)
         return
 
-    supported = translator.supported_targets or set()
-    unsupported = [lang for lang in config.target_langs if lang not in supported]
+    ensure_langs = config.ensure_langs
+    unsupported = [
+        lang for lang in ensure_langs if not translator.is_target_supported(lang)
+    ]
     if unsupported:
-        logger.warning(
-            "unsupported_targets langs=%s",
+        logger.error(
+            "unsupported_ensure_langs langs=%s",
             ", ".join(unsupported),
         )
-        config.target_langs = [
-            lang for lang in config.target_langs if lang in supported
-        ]
+        raise SystemExit("No supported languages left in ENSURE_LANGS")
 
-    logger.info("target_langs langs=%s", ", ".join(config.target_langs))
-    if not config.target_langs:
-        logger.error("no_supported_targets")
-        raise SystemExit("No supported target languages configured")
+    if len(ensure_langs) > 1:
+        missing_paths: list[str] = []
+        for target in ensure_langs:
+            has_source = any(
+                translator.supports_translation(src, target)
+                for src in ensure_langs
+                if src != target
+            )
+            if not has_source:
+                missing_paths.append(target)
+        if missing_paths:
+            logger.error(
+                "ensure_langs_missing_source langs=%s",
+                ", ".join(missing_paths),
+            )
+            raise SystemExit("Unsupported ensure language configuration")
+
+    logger.info("ensure_langs langs=%s", ", ".join(ensure_langs))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -98,11 +106,6 @@ def main(argv: list[str] | None = None) -> None:
         help="Set logging level",
     )
     parser.add_argument("--log-file", help="Write logs to a file")
-    sub = parser.add_subparsers(dest="command")
-
-    queue_parser = sub.add_parser("queue", help="Inspect the processing queue")
-    queue_parser.add_argument("--list", action="store_true", help="List queued paths")
-
     args = parser.parse_args(argv)
 
     log_level = (args.log_level or os.environ.get("LOG_LEVEL", "INFO")).upper()
@@ -116,27 +119,17 @@ def main(argv: list[str] | None = None) -> None:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logger.info("start log_level=%s log_file=%s", log_level, log_file)
 
-    if args.command == "queue":
-        config = Config.from_env()
-        repo = QueueRepository(config.queue_db)
-        count = repo.count()
-        print(f"{count} pending item{'s' if count != 1 else ''}")
-        if args.list:
-            for path, lang, _ in repo.all():
-                print(f"{path} [{lang}]")
-        repo.close()
-        return
-
     config = Config.from_env()
     validate_environment(config)
     logger.info(
-        "config_loaded api_url=%s targets=%s",
+        "config_loaded api_url=%s ensure_langs=%s",
         config.api_url,
-        config.target_langs,
+        config.ensure_langs,
     )
+    preferred_source = config.ensure_langs[0]
     translator = LibreTranslateClient(
         config.api_url,
-        config.src_lang,
+        preferred_source,
         config.retry_count,
         config.backoff_delay,
         config.availability_check_interval,
@@ -144,21 +137,21 @@ def main(argv: list[str] | None = None) -> None:
         persistent_session=config.persistent_sessions,
         http_timeout=config.http_timeout,
         translation_timeout=config.translation_timeout,
+        max_concurrent_requests=config.libretranslate_max_concurrent_requests,
     )
-    filter_target_languages(config, translator)
+    validate_ensure_languages(config, translator)
     jellyfin_client = None
     if config.jellyfin_url and config.jellyfin_token:
         jellyfin_client = JellyfinClient(
             config.jellyfin_url, config.jellyfin_token, config.http_timeout
         )
     mkv_tagger = MkvSubtitleTagger(
-        extractor=MkvSubtitleExtractor(sample_bytes=config.mkv_sample_bytes),
+        extractor=MkvSubtitleExtractor(),
         translator=translator,
         min_confidence=config.mkv_min_confidence,
     )
     logger.info(
-        "mkv_tagger_ready sample_bytes=%s min_confidence=%.2f cache_path=%s",
-        config.mkv_sample_bytes,
+        "mkv_tagger_ready min_confidence=%.2f cache_path=%s",
         config.mkv_min_confidence,
         config.mkv_cache_path,
     )

@@ -5,11 +5,6 @@ import pytest
 from babelarr.config import Config
 
 
-@pytest.fixture(autouse=True)
-def temp_queue_db(monkeypatch, tmp_path):
-    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
-
-
 def test_parse_target_languages_filters_and_normalizes(caplog):
     raw = "nl, , EN, xx1, nl"
     with caplog.at_level(logging.WARNING, logger="babelarr"):
@@ -91,7 +86,6 @@ def test_persistent_sessions_flag(monkeypatch):
 
 
 def test_jellyfin_env_parsed(monkeypatch, tmp_path):
-    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
     monkeypatch.setenv("JELLYFIN_URL", "http://jf")
     monkeypatch.setenv("JELLYFIN_TOKEN", "abc")
     cfg = Config.from_env()
@@ -100,7 +94,6 @@ def test_jellyfin_env_parsed(monkeypatch, tmp_path):
 
 
 def test_jellyfin_defaults(monkeypatch, tmp_path):
-    monkeypatch.setenv("QUEUE_DB", str(tmp_path / "queue.db"))
     monkeypatch.delenv("JELLYFIN_URL", raising=False)
     monkeypatch.delenv("JELLYFIN_TOKEN", raising=False)
     cfg = Config.from_env()

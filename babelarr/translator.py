@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -26,8 +28,8 @@ ERROR_MESSAGES = {
 class Translator(Protocol):
     """Protocol for translation clients."""
 
-    def translate(self, path: Path, lang: str) -> bytes:
-        """Translate the subtitle at *path* to *lang*.
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
+        """Translate the subtitle at *path* to *lang* using *src_lang* when provided.
 
         Returns the translated subtitle bytes or raises an exception.
         """
@@ -59,8 +61,12 @@ class LibreTranslateClient:
         persistent_session: bool = False,
         http_timeout: float = 30.0,
         translation_timeout: float = 900.0,
+        max_concurrent_requests: int | None = 10,
     ) -> None:
-        self.src_lang = src_lang
+        normalized_src = src_lang.strip().lower()
+        if not normalized_src:
+            raise ValueError("src_lang must be a non-empty language code")
+        self.src_lang = normalized_src
         self.retry_count = retry_count
         self.backoff_delay = backoff_delay
         self.availability_check_interval = availability_check_interval
@@ -74,6 +80,10 @@ class LibreTranslateClient:
         )
         self.languages: dict[str, set[str]] | None = None
         self.supported_targets: set[str] | None = None
+        if isinstance(max_concurrent_requests, int) and max_concurrent_requests > 0:
+            self._concurrency = threading.Semaphore(max_concurrent_requests)
+        else:
+            self._concurrency = None
 
     def is_available(self) -> bool:
         """Return ``True`` if the service responds without error."""
@@ -106,17 +116,39 @@ class LibreTranslateClient:
         """Fetch and cache supported language mappings."""
         if self.languages is not None:
             return
-        languages = self.api.fetch_languages()
-        self.languages = {
-            lang["code"]: set(lang.get("targets", [])) for lang in languages
-        }
+        fetched = self.api.fetch_languages()
+        normalized: dict[str, set[str]] = {}
+        for entry in fetched:
+            code = str(entry.get("code", "")).strip().lower()
+            if not code:
+                continue
+            targets = entry.get("targets") or []
+            normalized_targets: set[str] = set()
+            for target in targets:
+                t = str(target).strip().lower()
+                if t:
+                    normalized_targets.add(t)
+            normalized[code] = normalized_targets
+        self.languages = normalized
         if self.src_lang not in self.languages:
             raise ValueError(f"Unsupported source language: {self.src_lang}")
         self.supported_targets = self.languages[self.src_lang]
         logger.info(
-            "languages_loaded count=%d",
+            "languages_loaded sources=%d default_targets=%d",
+            len(self.languages),
             len(self.supported_targets),
         )
+
+    @contextmanager
+    def _acquire_slot(self):
+        if self._concurrency is None:
+            yield
+            return
+        self._concurrency.acquire()
+        try:
+            yield
+        finally:
+            self._concurrency.release()
 
     def _handle_error_response(self, resp: requests.Response, context: str) -> None:
         """Log and raise for non-200 *resp* responses."""
@@ -163,9 +195,9 @@ class LibreTranslateClient:
         self._handle_error_response(download, "LibreTranslate download")
         return download.content
 
-    def _request_translation(self, path: Path, lang: str) -> bytes:
+    def _request_translation(self, path: Path, src_lang: str, target_lang: str) -> bytes:
         """Send translation request and handle optional download flow."""
-        resp = self.api.translate_file(path, self.src_lang, lang, self.api_key)
+        resp = self.api.translate_file(path, src_lang, target_lang, self.api_key)
         self._handle_error_response(resp, "LibreTranslate")
 
         try:
@@ -196,7 +228,8 @@ class LibreTranslateClient:
             logger.debug("detect_skip reason=empty_sample")
             return None
 
-        resp = self.api.detect(sample)
+        with self._acquire_slot():
+            resp = self.api.detect(sample)
         self._handle_error_response(resp, "LibreTranslate detect")
         try:
             payload = resp.json()
@@ -215,7 +248,8 @@ class LibreTranslateClient:
                     confidence = float(item.get("confidence", 0.0))
                 except (TypeError, ValueError):
                     continue
-                candidate = DetectionResult(lang, confidence)
+                normalized = self._normalize_confidence(confidence)
+                candidate = DetectionResult(lang, normalized)
                 if best is None or candidate.confidence > best.confidence:
                     best = candidate
         else:  # pragma: no cover - defensive
@@ -232,15 +266,22 @@ class LibreTranslateClient:
         logger.debug("detect_skip reason=no_match threshold=%.3f", min_confidence)
         return None
 
-    def translate(self, path: Path, lang: str) -> bytes:
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
+        target = str(lang).strip().lower()
+        if not target:
+            raise ValueError("target language must be provided")
+        source = (src_lang or self.src_lang).strip().lower()
+        if not source:
+            raise ValueError("source language must be provided")
         self.ensure_languages()
-        if self.supported_targets is None or lang not in self.supported_targets:
-            raise ValueError(f"Unsupported target language: {lang}")
+        if not self.supports_translation(source, target):
+            raise ValueError(f"Unsupported translation {source} -> {target}")
         attempt = 0
         while True:
             attempt += 1
             try:
-                return self._request_translation(path, lang)
+                with self._acquire_slot():
+                    return self._request_translation(path, source, target)
             except requests.RequestException as exc:
                 if attempt >= self.retry_count:
                     logger.error(
@@ -258,5 +299,36 @@ class LibreTranslateClient:
                 )
                 time.sleep(delay)
 
+    def supported_targets_for(self, src_lang: str) -> set[str]:
+        normalized = str(src_lang).strip().lower()
+        self.ensure_languages()
+        return self.languages.get(normalized, set()) if self.languages else set()
+
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        normalized_target = str(target_lang).strip().lower()
+        if not normalized_target:
+            return False
+        targets = self.supported_targets_for(src_lang)
+        return normalized_target in targets
+
+    def is_target_supported(self, target_lang: str) -> bool:
+        normalized = str(target_lang).strip().lower()
+        if not normalized:
+            return False
+        self.ensure_languages()
+        if not self.languages:
+            return False
+        return any(normalized in targets for targets in self.languages.values())
+
     def close(self) -> None:
         self.api.close()
+
+    @staticmethod
+    def _normalize_confidence(raw: float) -> float:
+        """Normalize API confidence to the 0..1 range."""
+
+        if raw < 0.0:
+            return 0.0
+        if raw > 1.0:
+            raw = raw / 100.0 if raw <= 100.0 else 1.0
+        return min(raw, 1.0)

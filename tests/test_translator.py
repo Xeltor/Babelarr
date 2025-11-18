@@ -227,3 +227,24 @@ def test_detect_language_requires_threshold(monkeypatch):
 
     result = client.detect_language("hola", min_confidence=0.5)
     assert result is None
+
+
+def test_detect_language_normalizes_percentage_confidence(monkeypatch):
+    client = LibreTranslateClient("http://example", "en")
+    payload = [{"language": "en", "confidence": 14}]
+
+    def fake_detect(sample):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps(payload).encode()
+        return resp
+
+    monkeypatch.setattr(client.api, "detect", fake_detect)
+
+    high_threshold = client.detect_language("text", min_confidence=0.5)
+    assert high_threshold is None
+
+    low_threshold = client.detect_language("text", min_confidence=0.1)
+    assert low_threshold is not None
+    assert low_threshold.language == "en"
+    assert low_threshold.confidence == pytest.approx(0.14)

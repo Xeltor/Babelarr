@@ -24,7 +24,6 @@ def config(tmp_path):
         src_ext=".en.srt",
         api_url="http://example",
         workers=1,
-        queue_db=str(tmp_path / "queue.db"),
         retry_count=2,
         backoff_delay=0,
     )
@@ -44,10 +43,6 @@ def app(config):
     yield _create_app
 
     for inst in instances:
-        try:
-            inst.db.close()
-        except Exception:
-            pass
         close = getattr(inst.translator, "close", None)
         if callable(close):
             close()

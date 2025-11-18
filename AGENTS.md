@@ -23,10 +23,14 @@ Only open/update the PR if **all** steps succeed. Otherwise, fix and re-run `mak
   - `libretranslate_api.py` → Thin HTTP wrapper around LibreTranslate; manages raw
     requests and thread-local sessions. Consumed by `translator.py`, which handles
     translation logic, retries, and backoff.
-  - `queue_db.py` → SQLite queue repository; thread-safe access to queued paths.
+  - `mkv.py` → Subtitle stream helpers: list tracks via `ffprobe`, sample via `ffmpeg`,
+    and provide heuristics for language hints and metrics.
+  - `mkv_scan.py` → MKV-first translation pipeline that extracts streams, detects
+    languages, and feeds missing-language jobs into LibreTranslate, writing `.lang.srt`
+    outputs next to each MKV.
   - `translator.py` → `Translator` protocol and `LibreTranslateClient` implementation (retries/backoff).
-  - `watch.py` → Filesystem watcher with debounce.
-  - `worker.py` → Translation worker loop and logging.
+  - `watch.py` → Filesystem watcher that now monitors MKV directories only and triggers
+    on stabilized MKV files.
   - `__init__.py` → Public exports.
 - `tests/` → Pytest suite (unit tests by default; integration tests explicitly marked).
 - `Dockerfile` → Runtime container definition.
@@ -42,11 +46,10 @@ Only open/update the PR if **all** steps succeed. Otherwise, fix and re-run `mak
 - **CLI (`cli.py`)**: only config parsing, env validation (including service reachability), logging setup, signal handling, and app bootstrap. No business logic here.
 - **Application (`app.py`)**: orchestrates modules and schedules scans; no direct HTTP/DB work.
 - **Watch (`watch.py`)**: filesystem monitoring and debouncing only.
-- **Worker (`worker.py`)**: processes translation tasks with contextual logging.
+  - **Watch (`watch.py`)**: MKV-focused filesystem monitoring; SRT watching is gone.
 - **Jellyfin (`jellyfin_api.py`)**: minimal HTTP client to refresh Jellyfin.
 - **Configuration (`config.py`)**: all env var parsing/validation and defaults. No other module should read `os.environ` directly.
-- **Queue (`queue_db.py`)**: SQLite queue persistence, thread-safe CRUD.
-- **Translator (`translator.py`)**: translation logic and HTTP calls to LibreTranslate with retries/backoff and optional download flow. No filesystem scanning or queue management here.
+-- **Translator (`translator.py`)**: translation logic and HTTP calls to LibreTranslate with retries/backoff and optional download flow. No filesystem scanning here.
 
 When adding features, respect these boundaries. If cross-cutting concerns appear, introduce a small, focused interface rather than leaking responsibilities across modules.
 
@@ -57,7 +60,6 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - Use `logging.getLogger("babelarr")` or `logging.getLogger(__name__)`; never use bare `print()` for runtime logs.
 - Fail fast on unrecoverable errors; raise typed exceptions in library code. Handle at the edges (CLI/app) with clear messages.
 - Network interactions must use timeouts and retries with exponential backoff where appropriate (see `LibreTranslateClient`).
-- For translation-related logs (e.g., per-file translation progress), use `TranslationLogger` (see `worker.py`).
 
 ### Logging conventions
 
@@ -72,7 +74,7 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - All new/changed behavior must have unit tests under `tests/`, mirroring module names (`test_<module>.py`).
 - Keep unit tests fast and hermetic (no network or real filesystem where avoidable).
 - Mark slower or external tests as integration: `@pytest.mark.integration`. Unit suite must pass by default without special env.
-- Example: `watch.py` and `worker.py` tests use `pytest.mark.integration`.
+-- Example: `watch.py` tests use `pytest.mark.integration`.
 - When fixing a bug, first add a failing test that reproduces it; then implement the fix.
 - Target coverage for new/changed code: **≥85%** (enforce in CI if/when coverage tooling is added).
 
@@ -181,14 +183,13 @@ When implementing changes:
 
 ---
 
-## Upcoming MKV subtitle-tagging plan
+## MKV-first translation plan
 
-- Scope: operate only on `.mkv` containers, since the media pipeline remuxes everything to Matroska. Ignore other formats entirely.
-- Detection: add a LibreTranslate `/detect` helper that sends a small subtitle sample (first ~8 KB) and yields language + confidence. Expose this via `LibreTranslateClient` with a configurable minimum confidence.
-- Extraction: wrap `ffprobe`/`ffmpeg` commands in a `VideoSubtitleExtractor` that lists subtitle tracks (`ffprobe -show_streams -select_streams s -of json file.mkv`) and emits short SRT samples per stream using `ffmpeg -map 0:s:<idx> -c copy -f srt -`.
-- Tagging: call `mkvpropedit file.mkv --edit track:s1 --set language=eng` (track index per stream) to update tags in place once the detected language differs from or is missing in the container metadata.
-- Scheduling: run a dedicated MKV scan worker (similar to `scan_worker`) that walks watch roots for `.mkv` files on a configurable cadence, enqueues subtitle tagging tasks, and respects shutdown signals.
-- Reprocessing guard: persist per-file metadata (path, `mtime_ns`, per-stream language hashes) in SQLite or a sidecar file; only reprocess when `mtime` increases or a new subtitle stream hash is observed.
-- Logging/tests: reuse `TranslationLogger` context keys (`video`, `stream`) for observability and add unit tests around detection, extractor parsing, cache skips, and tag command construction using fakes/mocks.
+- Scope: treat `.mkv` containers as the primary source of subtitles and translate missing target languages directly from the streams. The old SRT-watcher/queue path has been retired.
+- Detection: reuse LibreTranslate's `/detect` API (via `MkvSubtitleTagger.detect_stream_language`) plus title heuristics to normalize ISO-639-2 codes for each stream and rank them by character/cue counts.
+- Extraction: use `ffmpeg` (`MkvSubtitleExtractor.extract_stream`) to export the chosen stream to a temporary SRT file before feeding it to LibreTranslate.
+- Translation: for every configured target language that lacks a stable `.lang.srt` output (or whose output is older than the MKV), pick the best available source language that LibreTranslate supports for that target, translate the temporary file, and atomically write the result beside the MKV.
+- Scheduling: `Application` now schedules periodic MKV scans, handles watcher notifications via `watch.py`, and offloads per-MKV work to `MkvScanner`, which can run in a thread pool and respects the `MkvCache`.
+- Constraints: LibreTranslate treats `bs` as target-only, so translation jobs should never send `bs` as the source language. New builds should verify `is_target_supported()` before scheduling translations.
 
 If uncertain, prefer smaller, incremental PRs over broad changes.

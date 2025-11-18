@@ -1,6 +1,6 @@
 # Babelarr
 
-A lightweight subtitle translator that watches directories for subtitle files in a configurable source language (default `.en.srt`) and uses [LibreTranslate](https://libretranslate.com/) to generate translations such as Dutch and Bosnian. Files are discovered through a watchdog and periodic scans, queued, and translated sequentially.
+Babelarr now treats `.mkv` files as the primary source: it scans every configured `WATCH_DIRS`/`MKV_DIRS`, tags undefined subtitle streams, and translates any missing languages from your ordered `ENSURE_LANGS` list by calling [LibreTranslate](https://libretranslate.com/). Translated `.lang.srt` files are written beside the MKV (or your preferred watch directory), and the first language in `ENSURE_LANGS` is preferred as the source while other detected tracks serve as fallbacks.
 
 ## Prerequisites
 
@@ -41,8 +41,7 @@ docker run -d --name babelarr \
   -v /path/to/subtitles:/data \
   -v /path/to/config:/config \
   -e WATCH_DIRS="/data" \
-  -e SRC_LANG="en" \
-  -e TARGET_LANGS="nl,bs" \
+  -e ENSURE_LANGS="en,nl,bs" \
   -e LIBRETRANSLATE_URL="http://libretranslate:5000" \
   -e LOG_LEVEL="INFO" \
   -e LOG_FILE="/config/babelarr.log" \
@@ -54,8 +53,9 @@ docker run -d --name babelarr \
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WATCH_DIRS` | `/data` | Colon-separated directories to scan for subtitles. |
-| `TARGET_LANGS` | `nl,bs` | Comma-separated language codes to translate into. Must include at least one valid code; startup fails if none remain after filtering. |
-| `SRC_LANG` | `en` | Two-letter source language of existing subtitles; files matching `*.LANG.srt` are processed. |
+| `ENSURE_LANGS` | `en,nl,bs` | Ordered comma-separated languages that Babelarr should ensure are available; missing languages are translated from the others, and the first entry is preferred as the default source. |
+| `SRC_LANG` | `en` | (Legacy) Two-letter source language that `ENSURE_LANGS` falls back to when not set. |
+| `TARGET_LANGS` | `nl,bs` | (Legacy) Backward-compatible list of target languages that `ENSURE_LANGS` also defaults to when unspecified. |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | Base URL of the LibreTranslate instance (no path). |
 | `LIBRETRANSLATE_API_KEY` | *(unset)* | API key for authenticated LibreTranslate instances. |
 | `JELLYFIN_URL` | *(unset)* | Base URL of the Jellyfin server for library refreshes. |
@@ -65,36 +65,26 @@ docker run -d --name babelarr \
 | `WORKERS` | `1` | Number of translation worker threads (maximum 10). |
 | `RETRY_COUNT` | `3` | Translation retry attempts. |
 | `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
-| `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before enqueueing. |
-| `STABILIZE_TIMEOUT` | `30` | Max seconds to wait for a subtitle file to stop growing before enqueueing. |
+| `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before rescheduling a scan. |
+| `STABILIZE_TIMEOUT` | `30` | Max seconds to wait for a subtitle file to stop growing before translating. |
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 | `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
 | `HTTP_TIMEOUT` | `30` | Timeout in seconds for non-translation HTTP requests. |
 | `TRANSLATION_TIMEOUT` | `900` | Timeout in seconds for translation requests. |
-| `QUEUE_DB` | `/config/queue.db` | Path to the SQLite queue database. |
+| `LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS` | `10` | Maximum number of LibreTranslate requests (translations or detections) allowed simultaneously. |
 | `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
 | `MKV_SCAN_INTERVAL_MINUTES` | `180` | Minutes between MKV rescans. |
-| `MKV_SAMPLE_BYTES` | `8192` | Maximum bytes to sample from each subtitle stream before detection. |
 | `MKV_MIN_CONFIDENCE` | `0.85` | Minimum LibreTranslate confidence required before applying a language tag. |
-| `MKV_CACHE_PATH` | `/config/mkv-cache.json` | Location of the JSON cache that tracks processed MKV files. |
+| `MKV_CACHE_PATH` | `/config/mkv-cache.db` | Path for the SQLite cache that tracks processed MKV files. |
+| `MKV_CACHE_ENABLED` | `true` | Disable to force reprocessing of MKVs without reading/writing the cache (useful for testing). |
 
-If `TARGET_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup.
+If `ENSURE_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup; when `ENSURE_LANGS` is unset it falls back to `SRC_LANG` plus `TARGET_LANGS` for backwards compatibility.
 
 Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and `LOG_FILE` environment variables respectively.
 
 `LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
 
-Queued translation tasks are stored in a small SQLite database (`/config/queue.db`) so that pending work survives container recreations. Mount the `/config` directory to a persistent location on the host to retain the queue.
-
-Check the current queue with:
-
-```bash
-babelarr queue [--list]
-```
-
-The command prints the number of pending items and, with `--list`, each queued path.
-
-The application scans for new source-language subtitles on startup, upon file creation and at a configurable interval (default every 60 minutes) thereafter. Translated subtitles are saved beside the source file with language suffixes (e.g. `.nl.srt`, `.bs.srt`). Existing subtitles that are modified or moved are re-queued for translation after a short debounce to ensure the file is fully written.
+The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation.
 
 If LibreTranslate is unreachable at startup or during operation, Babelarr logs the outage and pauses worker threads until the service becomes available again.
 
