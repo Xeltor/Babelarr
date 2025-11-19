@@ -21,6 +21,7 @@ from .mkv import (
 from .mkv_probe_cache import MkvProbeCache
 from .profiling import WorkloadProfiler
 from .translator import LibreTranslateClient
+from .ignore import is_path_ignored
 
 logger = logging.getLogger(__name__)
 RECENT_PRIORITY_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000
@@ -76,7 +77,12 @@ class MkvScanner:
             if not root_path.is_dir():
                 logger.warning("skip_missing_dir path=%s reason=not_found", root_path)
                 continue
+            if is_path_ignored(root_path, root=root_path):
+                logger.info("scan_skip_ignored path=%s", root_path)
+                continue
             for file_path in root_path.rglob("*.mkv"):
+                if is_path_ignored(file_path, root=root_path):
+                    continue
                 file_paths.append(file_path)
                 seen.add(str(file_path))
         recent_threshold_ns = time.time_ns() - RECENT_PRIORITY_WINDOW_NS
@@ -102,6 +108,8 @@ class MkvScanner:
             if not path.is_file():
                 continue
             if path.suffix.lower() != ".mkv":
+                continue
+            if is_path_ignored(path):
                 continue
             valid_paths.append(path)
         recent_threshold_ns = time.time_ns() - RECENT_PRIORITY_WINDOW_NS

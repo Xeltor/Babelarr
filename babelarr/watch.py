@@ -7,21 +7,27 @@ from pathlib import Path
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
 
+from .ignore import is_path_ignored
+
 logger = logging.getLogger(__name__)
 
 
 class MkvHandler(PatternMatchingEventHandler):
-    def __init__(self, app):
+    def __init__(self, app, root: Path | str | None = None):
         self.app = app
         self._debounce = self.app.config.debounce
         self._max_wait = self.app.config.stabilize_timeout
         self._recent: dict[Path, float] = {}
         self._last_prune = 0.0
+        self._root_path = Path(root) if root is not None else None
         super().__init__(
             patterns=["*.mkv"],
             ignore_directories=True,
             case_sensitive=False,
         )
+
+    def _should_ignore(self, path: Path) -> bool:
+        return is_path_ignored(path, root=self._root_path)
 
     def _wait_for_complete(self, path: Path) -> bool:
         start = time.monotonic()
@@ -43,6 +49,9 @@ class MkvHandler(PatternMatchingEventHandler):
 
     def _handle(self, path: Path) -> None:
         now = time.monotonic()
+        if self._should_ignore(path):
+            logger.debug("mkv_ignore_path path=%s", path)
+            return
         if now - self._last_prune > self._debounce:
             for p, ts in list(self._recent.items()):
                 if now - ts > self._debounce:
@@ -95,10 +104,13 @@ def watch(app) -> None:
     for root in app.config.mkv_dirs or []:
         logger.debug("watch_mkv path=%s", Path(root).name)
         root_path = Path(root)
+        if is_path_ignored(root_path, root=root_path):
+            logger.info("watch_skip_ignored path=%s", root_path)
+            continue
         if not root_path.exists():
             logger.warning("missing_mkv_directory path=%s", root_path.name)
             continue
-        observer.schedule(MkvHandler(app), root, recursive=True)
+        observer.schedule(MkvHandler(app, root=root_path), root, recursive=True)
     observer.start()
     logger.info("observer_started")
     try:
