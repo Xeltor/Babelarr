@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -32,7 +33,10 @@ class Application:
         self.mkv_tagger = mkv_tagger
 
         self.shutdown_event = threading.Event()
-        self.mkv_scan_queue: queue.Queue[Path | None] = queue.Queue()
+        self.mkv_scan_queue: queue.PriorityQueue[
+            tuple[int, int, Path | None]
+        ] = queue.PriorityQueue()
+        self._queue_counter = itertools.count()
         self._mkv_thread: threading.Thread | None = None
         self._mkv_cache: MkvCache | None = None
         self._mkv_scanner: MkvScanner | None = None
@@ -56,24 +60,24 @@ class Application:
             translated,
         )
 
-    def request_mkv_scan(self, path: Path | None = None) -> None:
+    def request_mkv_scan(self, path: Path | None = None, priority: int = 1) -> None:
         if not self._mkv_scanner:
             return
-        self.mkv_scan_queue.put(path)
+        self.mkv_scan_queue.put((priority, next(self._queue_counter), path))
 
     def handle_new_mkv(self, path: Path) -> None:
         if not self._mkv_scanner:
             return
         if not path.is_file() or path.suffix.lower() != ".mkv":
             return
-        self.request_mkv_scan(path)
+        self.request_mkv_scan(path, priority=0)
 
     def mkv_scan_worker(self) -> None:
         name = threading.current_thread().name
         logger.debug("mkv_worker_start name=%s", name)
         while not self.shutdown_event.is_set():
             try:
-                item = self.mkv_scan_queue.get(timeout=0.1)
+                _, _, item = self.mkv_scan_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:

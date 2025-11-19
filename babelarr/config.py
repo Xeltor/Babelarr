@@ -57,6 +57,7 @@ class Config:
     mkv_cache_path: str = "/config/mkv-cache.db"
     mkv_dirs: list[str] | None = None
     mkv_cache_enabled: bool = True
+    mkv_temp_dir: str = "/tmp/libretranslate-files-translate"
     ensure_langs: list[str] = field(default_factory=list)
 
     @staticmethod
@@ -224,6 +225,8 @@ class Config:
         mkv_dirs = [
             p for p in (os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")).split(":") if p
         ]
+        mkv_temp_dir = os.environ.get("MKV_TEMP_DIR", "/tmp/libretranslate-files-translate")
+        Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
         jellyfin_url = os.environ.get("JELLYFIN_URL") or None
@@ -294,7 +297,7 @@ class Config:
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
             "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s "
             "libretranslate_max_concurrent_requests=%s mkv_scan_interval_minutes=%s "
-            "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s",
+            "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s mkv_temp_dir=%s",
             root_dirs,
             ensure_langs,
             target_langs,
@@ -318,6 +321,7 @@ class Config:
             mkv_min_confidence,
             str(mkv_cache_path),
             mkv_cache_enabled,
+            mkv_temp_dir,
         )
 
         return cls(
@@ -346,4 +350,5 @@ class Config:
             mkv_cache_path=str(mkv_cache_path),
             mkv_dirs=mkv_dirs,
             mkv_cache_enabled=mkv_cache_enabled,
+            mkv_temp_dir=mkv_temp_dir,
         )

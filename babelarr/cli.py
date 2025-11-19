@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> None:
             config.jellyfin_url, config.jellyfin_token, config.http_timeout
         )
     mkv_tagger = MkvSubtitleTagger(
-        extractor=MkvSubtitleExtractor(),
+        extractor=MkvSubtitleExtractor(temp_dir=Path(config.mkv_temp_dir)),
         translator=translator,
         min_confidence=config.mkv_min_confidence,
     )

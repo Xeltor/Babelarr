@@ -3,12 +3,21 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import subprocess
+import tempfile
+import uuid
 from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
 
 from .translator import DetectionResult, LibreTranslateClient
+
+BITMAP_SUBTITLE_CODECS = {
+    "hdmv_pgs_subtitle",
+    "dvd_subtitle",
+    "dvdsub",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +47,40 @@ class SubtitleStream:
 
         return f"track:s{self.subtitle_index}"
 
+    def to_cache_dict(self) -> dict[str, str | int | float | bool | None]:
+        return {
+            "ffprobe_index": self.ffprobe_index,
+            "subtitle_index": self.subtitle_index,
+            "codec": self.codec,
+            "language": self.language,
+            "title": self.title,
+            "forced": int(self.forced),
+            "default": int(self.default),
+            "duration": self.duration,
+        }
+
+    @classmethod
+    def from_cache_dict(cls, data: dict[str, object | str | int | float | None]) -> "SubtitleStream":
+        duration_value = data.get("duration")
+        duration = None
+        if isinstance(duration_value, (int, float)):
+            duration = float(duration_value)
+        elif isinstance(duration_value, str):
+            try:
+                duration = float(duration_value)
+            except ValueError:
+                pass
+        return cls(
+            ffprobe_index=int(data.get("ffprobe_index", 0)),
+            subtitle_index=int(data.get("subtitle_index", 0)),
+            codec=data.get("codec") if isinstance(data.get("codec"), str) else None,
+            language=data.get("language") if isinstance(data.get("language"), str) else None,
+            title=data.get("title") if isinstance(data.get("title"), str) else None,
+            forced=bool(data.get("forced")),
+            default=bool(data.get("default")),
+            duration=duration,
+        )
+
 
 class MkvSubtitleExtractor:
     """Helper for enumerating and sampling subtitle streams from MKV files."""
@@ -46,10 +89,14 @@ class MkvSubtitleExtractor:
         self,
         ffprobe_path: str = "ffprobe",
         ffmpeg_path: str = "ffmpeg",
+        *,
+        mkvextract_path: str = "mkvextract",
+        temp_dir: Path | None = None,
         sample_bytes: int = 0,
     ) -> None:
         self.ffprobe_path = ffprobe_path
         self.ffmpeg_path = ffmpeg_path
+        self.mkvextract_path = mkvextract_path
         self.sample_bytes = sample_bytes
         self._copy_codecs = {
             "subrip",
@@ -62,6 +109,10 @@ class MkvSubtitleExtractor:
             "ass",
             "ssa",
         }
+        self._bitmap_codecs = BITMAP_SUBTITLE_CODECS
+        self.temp_dir = Path(temp_dir) if temp_dir else Path(tempfile.gettempdir())
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self._has_mkvextract = shutil.which(self.mkvextract_path) is not None
 
     def list_streams(self, path: Path) -> list[SubtitleStream]:
         """Return subtitle streams discovered via ffprobe."""
@@ -131,12 +182,16 @@ class MkvSubtitleExtractor:
                         return None
         return None
 
+    def create_temp_path(self, suffix: str) -> Path:
+        return self._temp_path(suffix)
+
+    def _temp_path(self, suffix: str) -> Path:
+        return self.temp_dir / f"babelarr-{uuid.uuid4().hex}{suffix}"
+
     def extract_sample(self, path: Path, stream: SubtitleStream) -> bytes:
-        """Return a small sample of the subtitle stream using ffmpeg."""
+        """Return a small sample of the subtitle stream for detection."""
 
         codec = (stream.codec or "").lower()
-        output_format = "srt"
-        copy_mode = "copy"
         if codec and codec not in self._copy_codecs:
             logger.info(
                 "transcode_sample path=%s track=%s codec=%s",
@@ -144,80 +199,122 @@ class MkvSubtitleExtractor:
                 stream.track_selector,
                 codec,
             )
-            copy_mode = "srt"
-            output_format = "srt"
+        temp_path = self.create_temp_path(".srt")
+        try:
+            self._prepare_subtitle_file(path, stream, temp_path)
+            data = temp_path.read_bytes()
+            sample = (
+                data
+                if self.sample_bytes <= 0
+                else data[: self.sample_bytes]
+            )
+            stats = self._compute_sample_stats(data)
+            stream.char_count = stats["char_count"]
+            stream.cue_count = stats["cue_count"]
+            return sample
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:  # pragma: no cover - cleanup best effort
+                pass
+
+    def _prepare_subtitle_file(
+        self,
+        path: Path,
+        stream: SubtitleStream,
+        output_path: Path,
+    ) -> None:
+        codec = (stream.codec or "").lower()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self._has_mkvextract:
+            self._extract_with_ffmpeg(path, stream, output_path)
+            return
+
+        raw_path = self._temp_path(f".{codec or 'track'}")
+        try:
+            try:
+                self._extract_with_mkvextract(path, stream, raw_path)
+            except FileNotFoundError:
+                self._extract_with_ffmpeg(path, stream, output_path)
+                return
+            except subprocess.CalledProcessError as exc:
+                logger.warning(
+                    "mkvextract_failed path=%s track=%s error=%s falling_back_to_ffmpeg",
+                    path.name,
+                    stream.track_selector,
+                    exc,
+                )
+                self._extract_with_ffmpeg(path, stream, output_path)
+                return
+            if codec and codec not in self._copy_codecs:
+                self._transcode_file(raw_path, output_path)
+            else:
+                if output_path.exists():
+                    output_path.unlink(missing_ok=True)
+                raw_path.replace(output_path)
+        finally:
+            try:
+                raw_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    def _extract_with_mkvextract(
+        self,
+        path: Path,
+        stream: SubtitleStream,
+        output_path: Path,
+    ) -> None:
+        command = [
+            self.mkvextract_path,
+            "tracks",
+            str(path),
+            f"{stream.ffprobe_index}:{output_path}",
+        ]
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+        )
+
+    def _transcode_file(self, src: Path, dest: Path) -> None:
+        if dest.exists():
+            dest.unlink(missing_ok=True)
         cmd = [
             self.ffmpeg_path,
             "-nostdin",
             "-v",
             "error",
             "-i",
-            str(path),
-            "-map",
-            f"0:s:{stream.subtitle_index - 1}",
+            str(src),
+            "-c:s",
+            "srt",
+            "-f",
+            "srt",
+            "-y",
+            str(dest),
         ]
-        if copy_mode == "copy":
-            cmd.extend(["-c", "copy"])
-        else:
-            cmd.extend(["-c:s", copy_mode])
-        cmd.extend(
-            [
-                "-f",
-                output_format,
-                "-",
-            ]
-        )
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 check=True,
                 capture_output=True,
             )
-        except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
+        except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or b"").decode("utf-8", errors="ignore").strip()
             raise MkvToolError(
-                f"ffmpeg failed for {path} track={stream.track_selector} stderr={stderr}"
+                f"ffmpeg failed converting {src} stderr={stderr}"
             ) from exc
-        data = result.stdout
-        sample = (
-            data
-            if self.sample_bytes <= 0
-            else data[: self.sample_bytes]
-        )
-        stats = self._compute_sample_stats(data)
-        stream.char_count = stats["char_count"]
-        stream.cue_count = stats["cue_count"]
-        return sample
 
-    @staticmethod
-    def _compute_sample_stats(content: bytes) -> dict[str, int]:
-        text = content.decode("utf-8", errors="ignore")
-        cues = 0
-        chars = 0
-        for block in text.split("\n\n"):
-            if "-->" in block:
-                cues += 1
-                # count text lines after timestamp
-                lines = block.splitlines()
-                for line in lines:
-                    if "-->" in line:
-                        continue
-                    chars += len(line.strip())
-        return {"cue_count": cues, "char_count": chars}
-
-    def extract_stream(self, path: Path, stream: SubtitleStream, output_path: Path) -> None:
-        """Extract the subtitle stream into a file."""
-
+    def _extract_with_ffmpeg(
+        self,
+        path: Path,
+        stream: SubtitleStream,
+        output_path: Path,
+    ) -> None:
         codec = (stream.codec or "").lower()
         output_format = "srt"
         copy_mode = "copy"
         if codec and codec not in self._copy_codecs:
-            logger.info(
-                "transcode_stream path=%s track=%s codec=%s",
-                path.name,
-                stream.track_selector,
-                codec,
-            )
             copy_mode = "srt"
         cmd = [
             self.ffmpeg_path,
@@ -256,6 +353,35 @@ class MkvSubtitleExtractor:
             raise MkvToolError(
                 f"ffmpeg failed for {path} track={stream.track_selector} stderr={stderr}"
             ) from exc
+
+    @staticmethod
+    def _compute_sample_stats(content: bytes) -> dict[str, int]:
+        text = content.decode("utf-8", errors="ignore")
+        cues = 0
+        chars = 0
+        for block in text.split("\n\n"):
+            if "-->" in block:
+                cues += 1
+                # count text lines after timestamp
+                lines = block.splitlines()
+                for line in lines:
+                    if "-->" in line:
+                        continue
+                    chars += len(line.strip())
+        return {"cue_count": cues, "char_count": chars}
+
+    def extract_stream(self, path: Path, stream: SubtitleStream, output_path: Path) -> None:
+        """Extract the subtitle stream into a file."""
+
+        codec = (stream.codec or "").lower()
+        if codec and codec not in self._copy_codecs:
+            logger.info(
+                "transcode_stream path=%s track=%s codec=%s",
+                path.name,
+                stream.track_selector,
+                codec,
+            )
+        self._prepare_subtitle_file(path, stream, output_path)
 
 
 ISO639_1_TO_2 = {
@@ -490,6 +616,8 @@ class MkvSubtitleTagger:
 
     def _is_supported_codec(self, stream: SubtitleStream) -> bool:
         codec = (stream.codec or "").lower()
+        if codec and codec in self._bitmap_codecs:
+            return False
         return (
             not codec
             or codec in self._copy_codecs

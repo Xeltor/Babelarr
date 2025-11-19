@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable
 
 from .mkv import (
+    BITMAP_SUBTITLE_CODECS,
     MkvSubtitleTagger,
     MkvToolError,
     SubtitleMetrics,
@@ -38,7 +38,7 @@ class MkvCache:
     def _ensure_schema(self) -> None:
         try:
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT)"
+                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT, streams TEXT)"
             )
         except sqlite3.DatabaseError as exc:
             logger.warning(
@@ -53,16 +53,18 @@ class MkvCache:
                 str(self.path), check_same_thread=False, isolation_level=None
             )
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT)"
+                "CREATE TABLE IF NOT EXISTS cache (path TEXT PRIMARY KEY, mtime_ns INTEGER, languages TEXT, streams TEXT)"
             )
         finally:
-            self._ensure_languages_column()
+            self._ensure_columns()
 
-    def _ensure_languages_column(self) -> None:
+    def _ensure_columns(self) -> None:
         cursor = self._conn.execute("PRAGMA table_info(cache)")
         columns = [row[1] for row in cursor.fetchall()]
         if "languages" not in columns:
             self._conn.execute("ALTER TABLE cache ADD COLUMN languages TEXT")
+        if "streams" not in columns:
+            self._conn.execute("ALTER TABLE cache ADD COLUMN streams TEXT")
 
     def _execute(self, query: str, params: tuple = ()):
         with self._lock:
@@ -97,6 +99,24 @@ class MkvCache:
             return set()
         return {str(entry) for entry in langs if isinstance(entry, str)}
 
+    def get_streams(self, path: Path) -> list[dict[str, object]]:
+        cursor = self._execute("SELECT streams FROM cache WHERE path = ?", (str(path),))
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return []
+        try:
+            streams = json.loads(row[0])
+        except ValueError:
+            logger.warning("decode_streams_failed path=%s data=%s", path, row[0])
+            return []
+        if not isinstance(streams, list):
+            return []
+        valid_streams: list[dict[str, object]] = []
+        for entry in streams:
+            if isinstance(entry, dict):
+                valid_streams.append(entry)
+        return valid_streams
+
     def _encode_languages(self, languages: Iterable[str] | None) -> str | None:
         if not languages:
             return None
@@ -105,11 +125,35 @@ class MkvCache:
             return None
         return json.dumps(normalized)
 
-    def update(self, path: Path, mtime_ns: int, languages: Iterable[str] | None = None) -> None:
+    def _encode_streams(self, streams: Iterable[dict[str, object]] | None) -> str | None:
+        if not streams:
+            return None
+        normalized: list[dict[str, object]] = []
+        for stream in streams:
+            if not isinstance(stream, dict):
+                continue
+            normalized.append(stream)
+        if not normalized:
+            return None
+        return json.dumps(normalized)
+
+    def update(
+        self,
+        path: Path,
+        mtime_ns: int,
+        *,
+        languages: Iterable[str] | None = None,
+        streams: Iterable[dict[str, object]] | None = None,
+    ) -> None:
         self._execute(
-            "INSERT INTO cache (path, mtime_ns, languages) VALUES (?, ?, ?) "
-            "ON CONFLICT(path) DO UPDATE SET mtime_ns=excluded.mtime_ns, languages=excluded.languages",
-            (str(path), int(mtime_ns), self._encode_languages(languages)),
+            "INSERT INTO cache (path, mtime_ns, languages, streams) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(path) DO UPDATE SET mtime_ns=excluded.mtime_ns, languages=excluded.languages, streams=excluded.streams",
+            (
+                str(path),
+                int(mtime_ns),
+                self._encode_languages(languages),
+                self._encode_streams(streams),
+            ),
         )
         logger.debug("update_cache path=%s mtime_ns=%d", path, mtime_ns)
 
@@ -202,16 +246,18 @@ class MkvScanner:
     def _process_paths(self, paths: list[Path]) -> int:
         if not paths:
             return 0
+        total_paths = len(paths)
         if self.worker_count <= 1:
             total = 0
-            for path in paths:
-                total += self._process_file(path)
+            for idx, path in enumerate(paths, start=1):
+                total += self._process_file(path, idx, total_paths)
             return total
 
         total = 0
         with ThreadPoolExecutor(max_workers=self.worker_count) as executor:
             future_to_path = {
-                executor.submit(self._process_file, path): path for path in paths
+                executor.submit(self._process_file, path, idx, total_paths): path
+                for idx, path in enumerate(paths, start=1)
             }
             for future in as_completed(future_to_path):
                 path = future_to_path[future]
@@ -221,49 +267,139 @@ class MkvScanner:
                     logger.error("fail_process_file path=%s error=%s", path, exc)
         return total
 
-    def _process_file(self, path: Path) -> int:
+    def _process_file(self, path: Path, position: int, total_paths: int) -> int:
         try:
             mtime_ns = path.stat().st_mtime_ns
         except FileNotFoundError:
             if self.cache:
                 self.cache.delete(path)
             return 0
+        self._log_file_start(path, position, total_paths)
         cache_state = "disabled"
-        cached_langs: set[str] = set()
+        cached_langs: set[str] | None = None
+        cached: int | None = None
         if self.cache:
             cached = self.cache.get_mtime(path)
             cached_langs = self.cache.get_languages(path)
             cache_state = "cache_miss"
             if cached == mtime_ns and not self._has_pending_targets(path, mtime_ns, cached_langs):
-                logger.debug("skip_cached path=%s", path.name)
+                self._log_file_finish(
+                    path,
+                    position,
+                    total_paths,
+                    streams=0,
+                    translated=0,
+                    cache_state="cache_hit",
+                    reason="cached",
+                )
                 return 0
         streams: list[SubtitleStream]
-        try:
-            streams = self.tagger.extractor.list_streams(path)
-        except MkvToolError as exc:
-            logger.error("fail_stream_enum path=%s error=%s", path.name, exc)
-            return 0
-        self._ensure_tagged_streams(path, streams)
+        reused_streams = False
+        if self.cache and cached == mtime_ns:
+            cached_stream_data = self.cache.get_streams(path)
+            if cached_stream_data:
+                try:
+                    streams = [
+                        SubtitleStream.from_cache_dict(entry)
+                        for entry in cached_stream_data
+                    ]
+                    reused_streams = True
+                except Exception as exc:  # pragma: no cover - defend
+                    logger.warning(
+                        "reuse_streams_failed path=%s error=%s", path.name, exc
+                    )
+                    reused_streams = False
+        if not reused_streams:
+            try:
+                streams = self.tagger.extractor.list_streams(path)
+            except MkvToolError as exc:
+                logger.error("fail_stream_enum path=%s error=%s", path.name, exc)
+                self._log_file_finish(
+                    path,
+                    position,
+                    total_paths,
+                    streams=0,
+                    translated=0,
+                    cache_state=cache_state,
+                    reason="stream_enum_failed",
+                )
+                return 0
+            self._ensure_tagged_streams(path, streams)
+        else:
+            logger.debug(
+                "reuse_streams path=%s cached=%s entries=%d",
+                path.name,
+                cached,
+                len(streams),
+            )
         language_candidates = self._map_streams_to_languages(path, streams)
         existing_langs = set(language_candidates.keys())
+        self._cleanup_embedded_sidecars(path, existing_langs)
         translated = self._translate_missing(path, language_candidates, mtime_ns, existing_langs)
         try:
             updated_mtime = path.stat().st_mtime_ns
         except FileNotFoundError:
             if self.cache:
                 self.cache.delete(path)
+            self._log_file_finish(
+                path,
+                position,
+                total_paths,
+                streams=len(streams),
+                translated=translated,
+                cache_state="missing",
+                reason="missing_post_process",
+            )
             return translated
         if self.cache:
-            self.cache.update(path, updated_mtime, languages=existing_langs)
+            stream_cache_data = [stream.to_cache_dict() for stream in streams]
+            self.cache.update(
+                path,
+                updated_mtime,
+                languages=existing_langs,
+                streams=stream_cache_data,
+            )
             cache_state = "cache_updated"
-        logger.info(
-            "file_state path=%s streams=%d translated=%d cache=%s",
-            path.name,
-            len(streams),
-            translated,
-            cache_state,
+        self._log_file_finish(
+            path,
+            position,
+            total_paths,
+            streams=len(streams),
+            translated=translated,
+            cache_state=cache_state,
         )
         return translated
+
+    def _log_file_start(self, path: Path, position: int, total_paths: int) -> None:
+        logger.info(
+            "file_start path=%s index=%d total=%d",
+            path.name,
+            position,
+            total_paths,
+        )
+
+    def _log_file_finish(
+        self,
+        path: Path,
+        position: int,
+        total_paths: int,
+        *,
+        streams: int | None = None,
+        translated: int | None = None,
+        cache_state: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        extra_reason = f" reason={reason}" if reason else ""
+        logger.info(
+            "file_done path=%s index=%d total=%d streams=%s translated=%s cache=%s%s",
+            path.name,
+            position,
+            total_paths,
+            streams if streams is not None else "-",
+            translated if translated is not None else "-",
+            cache_state or "-",
+            extra_reason,
+        )
 
     def _translate_missing(
         self,
@@ -353,6 +489,9 @@ class MkvScanner:
     ) -> dict[str, tuple[SubtitleStream, SubtitleMetrics]]:
         candidates: dict[str, tuple[SubtitleStream, SubtitleMetrics]] = {}
         for stream in streams:
+            codec = (stream.codec or "").lower()
+            if codec in BITMAP_SUBTITLE_CODECS:
+                continue
             lang_iso2 = self._determine_language(path, stream)
             lang = normalize_language_code_iso1(lang_iso2)
             if not lang:
@@ -365,11 +504,12 @@ class MkvScanner:
         return candidates
 
     def _determine_language(self, path: Path, stream: SubtitleStream) -> str | None:
-        detection = self.tagger.detect_stream_language(path, stream)
-        if detection:
-            normalized = normalize_language_code(detection.language)
-            if normalized:
-                return normalized
+        if not stream.language:
+            detection = self.tagger.detect_stream_language(path, stream)
+            if detection:
+                normalized = normalize_language_code(detection.language)
+                if normalized:
+                    return normalized
         fallback = normalize_language_code(stream.language)
         if fallback:
             return fallback
@@ -421,12 +561,11 @@ class MkvScanner:
             raise RuntimeError("subtitle extractor is not available")
         if not path.exists():
             raise FileNotFoundError(path)
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".srt")
-        temp_path = Path(temp_file.name)
-        temp_file.close()
+        temp_path = extractor.create_temp_path(".srt")
         try:
             extractor.extract_stream(path, stream, temp_path)
             translated = self.translator.translate(temp_path, target_lang, src_lang=source_lang)
+            translated = self._sanitize_translated_subtitle(translated)
             temp_output = subtitle_blob.with_suffix(subtitle_blob.suffix + ".tmp")
             temp_output.write_bytes(translated)
             temp_output.replace(subtitle_blob)
@@ -443,5 +582,48 @@ class MkvScanner:
             except Exception:  # pragma: no cover - cleanup best effort
                 pass
 
+    @staticmethod
+    def _sanitize_translated_subtitle(subtitle_bytes: bytes) -> bytes:
+        try:
+            text = subtitle_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            return subtitle_bytes
+        lines = text.splitlines()
+        filtered = [
+            line
+            for line in lines
+            if not line.strip() or any(ch != "#" for ch in line.strip())
+        ]
+        if not filtered:
+            return subtitle_bytes
+        return ("\n".join(filtered) + ("\n" if text.endswith("\n") else "")).encode("utf-8")
+
     def _subtitle_path(self, path: Path, lang: str) -> Path:
         return path.with_suffix(f".{lang}.srt")
+
+    def _cleanup_embedded_sidecars(
+        self,
+        path: Path,
+        languages: Iterable[str] | None,
+    ) -> None:
+        if not languages:
+            return
+        for lang in languages:
+            subtitle = self._subtitle_path(path, lang)
+            if not subtitle.exists():
+                continue
+            try:
+                subtitle.unlink()
+            except Exception as exc:
+                logger.warning(
+                    "remove_sidecar_failed path=%s target=%s error=%s",
+                    path.name,
+                    lang,
+                    exc,
+                )
+            else:
+                logger.info(
+                    "remove_sidecar path=%s target=%s reason=embedded_stream",
+                    path.name,
+                    lang,
+                )
