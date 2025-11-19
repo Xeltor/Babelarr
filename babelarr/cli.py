@@ -10,6 +10,8 @@ from .app import Application
 from .config import Config
 from .jellyfin_api import JellyfinClient
 from .mkv import MkvSubtitleExtractor, MkvSubtitleTagger
+from .profiling import WorkloadProfiler
+from .profiling_ui import ProfilingDashboard
 from .translator import LibreTranslateClient
 
 logger = logging.getLogger(__name__)
@@ -67,16 +69,26 @@ def validate_ensure_languages(config: Config, translator: LibreTranslateClient) 
         logger.error("fetch_languages_failed error=%s", exc)
         return
 
-    ensure_langs = config.ensure_langs
-    unsupported = [
-        lang for lang in ensure_langs if not translator.is_target_supported(lang)
-    ]
+    original_langs = config.ensure_langs
+    supported_langs: list[str] = []
+    unsupported: list[str] = []
+    for lang in original_langs:
+        if translator.is_target_supported(lang):
+            supported_langs.append(lang)
+        else:
+            unsupported.append(lang)
+
     if unsupported:
         logger.error(
             "unsupported_ensure_langs langs=%s",
             ", ".join(unsupported),
         )
+    if not supported_langs:
         raise SystemExit("No supported languages left in ENSURE_LANGS")
+
+    if supported_langs != original_langs:
+        config.ensure_langs = supported_langs
+    ensure_langs = supported_langs
 
     if len(ensure_langs) > 1:
         missing_paths: list[str] = []
@@ -126,18 +138,27 @@ def main(argv: list[str] | None = None) -> None:
         config.api_url,
         config.ensure_langs,
     )
+    profiler = WorkloadProfiler(enabled=config.profiling_enabled)
+    dashboard = ProfilingDashboard(
+        profiler,
+        host=config.profiling_ui_host,
+        port=config.profiling_ui_port,
+    )
     preferred_source = config.ensure_langs[0]
     translator = LibreTranslateClient(
         config.api_url,
         preferred_source,
-        config.retry_count,
-        config.backoff_delay,
-        config.availability_check_interval,
+        retry_count=config.retry_count,
+        backoff_delay=config.backoff_delay,
+        availability_check_interval=config.availability_check_interval,
         api_key=config.api_key,
         persistent_session=config.persistent_sessions,
         http_timeout=config.http_timeout,
         translation_timeout=config.translation_timeout,
         max_concurrent_requests=config.libretranslate_max_concurrent_requests,
+        max_concurrent_detection_requests=config.libretranslate_max_concurrent_detection_requests,
+        fallback_urls=config.libretranslate_fallback_urls,
+        profiler=profiler,
     )
     validate_ensure_languages(config, translator)
     jellyfin_client = None
@@ -145,10 +166,15 @@ def main(argv: list[str] | None = None) -> None:
         jellyfin_client = JellyfinClient(
             config.jellyfin_url, config.jellyfin_token, config.http_timeout
         )
+    extractor = MkvSubtitleExtractor(
+        temp_dir=Path(config.mkv_temp_dir),
+        profiler=profiler,
+    )
     mkv_tagger = MkvSubtitleTagger(
-        extractor=MkvSubtitleExtractor(temp_dir=Path(config.mkv_temp_dir)),
+        extractor=extractor,
         translator=translator,
         min_confidence=config.mkv_min_confidence,
+        profiler=profiler,
     )
     logger.info(
         "mkv_tagger_ready min_confidence=%.2f cache_path=%s",
@@ -156,7 +182,14 @@ def main(argv: list[str] | None = None) -> None:
         config.mkv_cache_path,
     )
 
-    app = Application(config, translator, jellyfin_client, mkv_tagger)
+    app = Application(
+        config,
+        translator,
+        jellyfin_client,
+        mkv_tagger,
+        profiler=profiler,
+        profiling_dashboard=dashboard,
+    )
 
     def handle_signal(signum, frame):
         logger.info("received_signal signum=%s", signum)

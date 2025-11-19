@@ -5,14 +5,15 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol, Sequence
 
 import requests
 
 from .libretranslate_api import LibreTranslateAPI
+from .profiling import WorkloadProfiler
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,18 @@ class LibreTranslateClient:
         self,
         api_url: str,
         src_lang: str,
+        *,
+        fallback_urls: Sequence[str] | None = None,
         retry_count: int = 3,
         backoff_delay: float = 1.0,
         availability_check_interval: float = 30.0,
         api_key: str | None = None,
         persistent_session: bool = False,
         http_timeout: float = 180.0,
-        translation_timeout: float = 900.0,
+        translation_timeout: float = 3600.0,
         max_concurrent_requests: int | None = 10,
+        max_concurrent_detection_requests: int | None = None,
+        profiler: WorkloadProfiler | None = None,
     ) -> None:
         normalized_src = src_lang.strip().lower()
         if not normalized_src:
@@ -72,18 +77,48 @@ class LibreTranslateClient:
         self.availability_check_interval = availability_check_interval
         self.api_key = api_key
 
-        self.api = LibreTranslateAPI(
-            api_url,
-            http_timeout=http_timeout,
-            translation_timeout=translation_timeout,
-            persistent_session=persistent_session,
+        urls: list[str] = []
+        seen: set[str] = set()
+        for candidate in (api_url, *(fallback_urls or ())):
+            if not candidate:
+                continue
+            normalized = candidate.rstrip("/")
+            if not normalized or normalized in seen:
+                continue
+            urls.append(normalized)
+            seen.add(normalized)
+        if not urls:
+            raise ValueError("At least one LibreTranslate URL is required")
+        self._api_urls = tuple(urls)
+        self._apis: tuple[LibreTranslateAPI, ...] = tuple(
+            LibreTranslateAPI(
+                url,
+                http_timeout=http_timeout,
+                translation_timeout=translation_timeout,
+                persistent_session=persistent_session,
+            )
+            for url in self._api_urls
         )
+        self.api = self._apis[0]
         self.languages: dict[str, set[str]] | None = None
         self.supported_targets: set[str] | None = None
         if isinstance(max_concurrent_requests, int) and max_concurrent_requests > 0:
-            self._concurrency = threading.Semaphore(max_concurrent_requests)
+            self._post_concurrency = threading.Semaphore(max_concurrent_requests)
         else:
-            self._concurrency = None
+            self._post_concurrency = None
+        if isinstance(max_concurrent_detection_requests, int) and (
+            max_concurrent_detection_requests > 0
+        ):
+            self._detection_concurrency = threading.Semaphore(
+                max_concurrent_detection_requests
+            )
+        else:
+            self._detection_concurrency = None
+
+        self.profiler = profiler
+        self._translation_profile_name = "translator.translate"
+        self._detection_profile_name = "translator.detect"
+        self._download_profile_name = "translator.download"
 
     def is_available(self) -> bool:
         """Return ``True`` if the service responds without error."""
@@ -116,7 +151,10 @@ class LibreTranslateClient:
         """Fetch and cache supported language mappings."""
         if self.languages is not None:
             return
-        fetched = self.api.fetch_languages()
+        resp = self._call_api_until_success(
+            lambda api: api.fetch_languages(), "LibreTranslate fetch_languages"
+        )
+        fetched = resp.json() if isinstance(resp, requests.Response) else resp
         normalized: dict[str, set[str]] = {}
         for entry in fetched:
             code = str(entry.get("code", "")).strip().lower()
@@ -140,15 +178,71 @@ class LibreTranslateClient:
         )
 
     @contextmanager
-    def _acquire_slot(self):
-        if self._concurrency is None:
+    def _acquire_slot(self, *, detection: bool = False):
+        semaphores: list[threading.Semaphore] = []
+        if detection:
+            if self._detection_concurrency is not None:
+                semaphores.append(self._detection_concurrency)
+            elif self._post_concurrency is not None:
+                semaphores.append(self._post_concurrency)
+        elif self._post_concurrency is not None:
+            semaphores.append(self._post_concurrency)
+        if not semaphores:
             yield
             return
-        self._concurrency.acquire()
+        for semaphore in semaphores:
+            semaphore.acquire()
         try:
             yield
         finally:
-            self._concurrency.release()
+            for semaphore in reversed(semaphores):
+                semaphore.release()
+
+    def _profile(self, name: str):
+        if not self.profiler:
+            return nullcontext()
+        return self.profiler.track(name)
+
+    def _call_api_until_success(
+        self,
+        func: Callable[[LibreTranslateAPI], requests.Response],
+        context: str,
+    ) -> requests.Response:
+        """Invoke *func* across every configured API until one succeeds."""
+        last_exc: requests.RequestException | None = None
+        for api in self._apis:
+            try:
+                resp = func(api)
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.debug(
+                    "api_request_failed url=%s context=%s error=%s",
+                    api.base_url,
+                    context,
+                    exc,
+                )
+                continue
+            try:
+                if isinstance(resp, requests.Response):
+                    self._handle_error_response(resp, context)
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.debug(
+                    "api_error_response url=%s context=%s error=%s",
+                    api.base_url,
+                    context,
+                    exc,
+                )
+                continue
+            if api is not self.api:
+                logger.info(
+                    "fallback_api_used context=%s url=%s",
+                    context,
+                    api.base_url,
+                )
+            return resp
+        assert last_exc is not None
+        raise last_exc
 
     def _handle_error_response(self, resp: requests.Response, context: str) -> None:
         """Log and raise for non-200 *resp* responses."""
@@ -191,14 +285,17 @@ class LibreTranslateClient:
 
     def _retrieve_download(self, download_url: str) -> bytes:
         """Fetch translated content from *download_url*."""
-        download = self.api.download(download_url)
+        with self._profile(self._download_profile_name):
+            download = self.api.download(download_url)
         self._handle_error_response(download, "LibreTranslate download")
         return download.content
 
     def _request_translation(self, path: Path, src_lang: str, target_lang: str) -> bytes:
         """Send translation request and handle optional download flow."""
-        resp = self.api.translate_file(path, src_lang, target_lang, self.api_key)
-        self._handle_error_response(resp, "LibreTranslate")
+        resp = self._call_api_until_success(
+            lambda api: api.translate_file(path, src_lang, target_lang, self.api_key),
+            "LibreTranslate",
+        )
 
         try:
             data = resp.json()
@@ -228,9 +325,11 @@ class LibreTranslateClient:
             logger.debug("detect_skip reason=empty_sample")
             return None
 
-        with self._acquire_slot():
-            resp = self.api.detect(sample)
-        self._handle_error_response(resp, "LibreTranslate detect")
+        with self._acquire_slot(detection=True):
+            with self._profile(self._detection_profile_name):
+                resp = self._call_api_until_success(
+                    lambda api: api.detect(sample), "LibreTranslate detect"
+                )
         try:
             payload = resp.json()
         except ValueError as exc:  # pragma: no cover - API bug
@@ -280,8 +379,9 @@ class LibreTranslateClient:
         while True:
             attempt += 1
             try:
-                with self._acquire_slot():
-                    return self._request_translation(path, source, target)
+                with self._profile(self._translation_profile_name):
+                    with self._acquire_slot():
+                        return self._request_translation(path, source, target)
             except requests.RequestException as exc:
                 if attempt >= self.retry_count:
                     logger.error(
@@ -321,7 +421,8 @@ class LibreTranslateClient:
         return any(normalized in targets for targets in self.languages.values())
 
     def close(self) -> None:
-        self.api.close()
+        for api in self._apis:
+            api.close()
 
     @staticmethod
     def _normalize_confidence(raw: float) -> float:

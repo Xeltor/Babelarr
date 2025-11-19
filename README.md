@@ -70,12 +70,12 @@ docker run -d --name babelarr \
 | `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
 | `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
 | `HTTP_TIMEOUT` | `180` | Timeout in seconds for non-translation HTTP requests. |
-| `TRANSLATION_TIMEOUT` | `900` | Timeout in seconds for translation requests. |
+| `TRANSLATION_TIMEOUT` | `3600` | Timeout in seconds for translation requests. |
 | `LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS` | `10` | Maximum number of LibreTranslate requests (translations or detections) allowed simultaneously. |
 | `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
 | `MKV_SCAN_INTERVAL_MINUTES` | `180` | Minutes between MKV rescans. |
 | `MKV_MIN_CONFIDENCE` | `0.85` | Minimum LibreTranslate confidence required before applying a language tag. |
-| `MKV_CACHE_PATH` | `/config/mkv-cache.db` | Path for the SQLite cache that tracks processed MKV files. |
+| `MKV_CACHE_PATH` | `/config/cache.db` | Path for the combined cache (MKV metadata + probe results) that speeds up scans. |
 | `MKV_CACHE_ENABLED` | `true` | Disable to force reprocessing of MKVs without reading/writing the cache (useful for testing). |
 
 If `ENSURE_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup; when `ENSURE_LANGS` is unset it falls back to `SRC_LANG` plus `TARGET_LANGS` for backwards compatibility.

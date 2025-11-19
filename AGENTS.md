@@ -189,7 +189,7 @@ When implementing changes:
 - Detection: reuse LibreTranslate's `/detect` API (via `MkvSubtitleTagger.detect_stream_language`) plus title heuristics to normalize ISO-639-2 codes for each stream and rank them by character/cue counts.
 - Extraction: use `ffmpeg` (`MkvSubtitleExtractor.extract_stream`) to export the chosen stream to a temporary SRT file before feeding it to LibreTranslate.
 - Translation: for every configured target language that lacks a stable `.lang.srt` output (or whose output is older than the MKV), pick the best available source language that LibreTranslate supports for that target, translate the temporary file, and atomically write the result beside the MKV.
-- Scheduling: `Application` now schedules periodic MKV scans, handles watcher notifications via `watch.py`, and offloads per-MKV work to `MkvScanner`, which can run in a thread pool and respects the `MkvCache`.
+- Scheduling: `Application` now schedules periodic MKV scans, handles watcher notifications via `watch.py`, and offloads per-MKV work to `MkvScanner`, which can run in a thread pool and respects the consolidated MKV cache manager (`cache.db`).
 - Constraints: LibreTranslate treats `bs` as target-only, so translation jobs should never send `bs` as the source language. New builds should verify `is_target_supported()` before scheduling translations.
 
 If uncertain, prefer smaller, incremental PRs over broad changes.

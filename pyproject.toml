@@ -13,6 +13,7 @@ dependencies = [
     "watchdog",
     "schedule",
     "requests",
+    "pysubs2",
 ]
 
 [project.scripts]

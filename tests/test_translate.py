@@ -157,7 +157,7 @@ def test_api_key_included(monkeypatch, tmp_path):
     captured: dict[str, dict | None] = {"data": None}
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
-        assert timeout == 900
+        assert timeout == 3600
         captured["data"] = data
         resp = requests.Response()
         resp.status_code = 200
@@ -200,7 +200,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
     captured: dict[str, dict | None] = {"data": None}
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
-        assert timeout == 900
+        assert timeout == 3600
         captured["data"] = data
         resp = requests.Response()
         resp.status_code = 200
@@ -240,7 +240,7 @@ def test_download_translated_file(monkeypatch, tmp_path):
     tmp_file.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n")
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
-        assert timeout == 900
+        assert timeout == 3600
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b'{"translatedFileUrl": "http://example/translated.srt"}'

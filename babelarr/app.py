@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import itertools
 import logging
-import queue
 import threading
 import time
 from pathlib import Path
@@ -13,7 +11,11 @@ from . import watch as watch_module
 from .config import Config
 from .jellyfin_api import JellyfinClient
 from .mkv import MkvSubtitleTagger
-from .mkv_scan import MkvCache, MkvScanner
+from .mkv_probe_cache import MkvProbeCache
+from .mkv_scan import MkvScanner
+from .mkv_workflow import MkvWorkflow
+from .profiling import WorkloadProfiler
+from .profiling_ui import ProfilingDashboard
 from .translator import Translator
 
 logger = logging.getLogger(__name__)
@@ -26,73 +28,40 @@ class Application:
         translator: Translator,
         jellyfin: JellyfinClient | None = None,
         mkv_tagger: MkvSubtitleTagger | None = None,
+        profiler: WorkloadProfiler | None = None,
+        profiling_dashboard: ProfilingDashboard | None = None,
     ):
         self.config = config
         self.translator = translator
         self.jellyfin = jellyfin
         self.mkv_tagger = mkv_tagger
+        self.profiler = profiler
 
         self.shutdown_event = threading.Event()
-        self.mkv_scan_queue: queue.PriorityQueue[
-            tuple[int, int, Path | None]
-        ] = queue.PriorityQueue()
-        self._queue_counter = itertools.count()
-        self._mkv_thread: threading.Thread | None = None
-        self._mkv_cache: MkvCache | None = None
+        self._probe_cache: MkvProbeCache | None = None
         self._mkv_scanner: MkvScanner | None = None
+        self.workflow: MkvWorkflow | None = None
+        self.profiling_dashboard = profiling_dashboard
 
-    def mkv_scan(self) -> None:
-        if not self._mkv_scanner:
-            return
-        logger.info("mkv_scan_start")
-        files, translated = self._mkv_scanner.scan()
-        logger.info("mkv_scan_complete files=%d translated=%d", files, translated)
-
-    def mkv_scan_file(self, path: Path) -> None:
-        if not self._mkv_scanner:
-            return
-        logger.info("mkv_scan_file path=%s", path)
-        files, translated = self._mkv_scanner.scan_files([path])
-        logger.info(
-            "mkv_scan_file_complete path=%s processed=%d translated=%d",
-            path,
-            files,
-            translated,
-        )
-
-    def request_mkv_scan(self, path: Path | None = None, priority: int = 1) -> None:
-        if not self._mkv_scanner:
-            return
-        self.mkv_scan_queue.put((priority, next(self._queue_counter), path))
+    def request_mkv_scan(self) -> None:
+        if self.workflow:
+            self.workflow.request_scan()
 
     def handle_new_mkv(self, path: Path) -> None:
-        if not self._mkv_scanner:
-            return
-        if not path.is_file() or path.suffix.lower() != ".mkv":
-            return
-        self.request_mkv_scan(path, priority=0)
+        if self.workflow:
+            self.workflow.handle_new_mkv(path)
 
-    def mkv_scan_worker(self) -> None:
-        name = threading.current_thread().name
-        logger.debug("mkv_worker_start name=%s", name)
-        while not self.shutdown_event.is_set():
-            try:
-                _, _, item = self.mkv_scan_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            try:
-                if item is None:
-                    self.mkv_scan()
-                else:
-                    self.mkv_scan_file(item)
-            finally:
-                self.mkv_scan_queue.task_done()
-        logger.debug("mkv_worker_exit name=%s", name)
+    def invalidate_mkv_cache_state(self, path: Path) -> None:
+        if self._probe_cache:
+            self._probe_cache.invalidate_path(path)
 
     def run(self) -> None:
         if self.mkv_tagger and self.config.mkv_dirs:
-            if self.config.mkv_cache_enabled:
-                self._mkv_cache = MkvCache(self.config.mkv_cache_path)
+            self._probe_cache = MkvProbeCache(
+                self.mkv_tagger.extractor,
+                db_path=self.config.mkv_cache_path,
+                profiler=self.profiler,
+            )
             preferred_source = (
                 self.config.ensure_langs[0] if self.config.ensure_langs else None
             )
@@ -101,21 +70,23 @@ class Application:
                 tagger=self.mkv_tagger,
                 translator=self.translator,
                 ensure_langs=self.config.ensure_langs,
-                cache=self._mkv_cache,
+                probe_cache=self._probe_cache,
+                cache_enabled=self.config.mkv_cache_enabled,
                 preferred_source=preferred_source,
-                worker_count=self.config.workers,
+                jellyfin_client=self.jellyfin,
+                profiler=self.profiler,
             )
+            self.workflow = MkvWorkflow(
+                scanner=self._mkv_scanner,
+                worker_count=self.config.workers,
+                shutdown_event=self.shutdown_event,
+                profiler=self.profiler,
+            )
+            self.workflow.start()
             self.request_mkv_scan()
             schedule.every(self.config.mkv_scan_interval_minutes).minutes.do(
                 self.request_mkv_scan
             )
-
-        if self._mkv_scanner:
-            self._mkv_thread = threading.Thread(
-                target=self.mkv_scan_worker,
-                name="mkv-foreman",
-            )
-            self._mkv_thread.start()
 
         watcher_thread: threading.Thread | None = None
         if self.config.mkv_dirs:
@@ -124,6 +95,8 @@ class Application:
             )
             watcher_thread.start()
         logger.info("service_started")
+        if self.profiling_dashboard:
+            self.profiling_dashboard.start()
 
         try:
             while not self.shutdown_event.is_set():
@@ -133,9 +106,15 @@ class Application:
             self.shutdown_event.set()
             if watcher_thread:
                 watcher_thread.join()
-            if self._mkv_thread:
-                self._mkv_thread.join()
+            if self.workflow:
+                self.workflow.stop()
             close = getattr(self.translator, "close", None)
             if callable(close):
                 close()
+            if self.profiler and self.profiler.enabled:
+                lines = self.profiler.report_lines()
+                if lines:
+                    logger.info("profiling_summary %s", " | ".join(lines))
+            if self.profiling_dashboard:
+                self.profiling_dashboard.stop()
             logger.info("shutdown_complete")

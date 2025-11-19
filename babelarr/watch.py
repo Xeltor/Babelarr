@@ -17,7 +17,11 @@ class MkvHandler(PatternMatchingEventHandler):
         self._max_wait = self.app.config.stabilize_timeout
         self._recent: dict[Path, float] = {}
         self._last_prune = 0.0
-        super().__init__(patterns=["*.mkv"], ignore_directories=True)
+        super().__init__(
+            patterns=["*.mkv"],
+            ignore_directories=True,
+            case_sensitive=False,
+        )
 
     def _wait_for_complete(self, path: Path) -> bool:
         start = time.monotonic()
@@ -52,7 +56,11 @@ class MkvHandler(PatternMatchingEventHandler):
 
         if self._wait_for_complete(path):
             self._recent[path] = now
+            logger.info("observer_priority path=%s", path.name)
             self.app.handle_new_mkv(path)
+
+    def _invalidate(self, path: Path) -> None:
+        self.app.invalidate_mkv_cache_state(path)
 
     def on_created(self, event):
         logger.debug("mkv_detect_new path=%s", Path(event.src_path).name)
@@ -65,7 +73,20 @@ class MkvHandler(PatternMatchingEventHandler):
             Path(event.src_path).name,
             dest.name,
         )
+        self._invalidate(Path(event.src_path))
         self._handle(dest)
+
+    def on_deleted(self, event):
+        path = Path(event.src_path)
+        logger.debug("mkv_detect_deleted path=%s", path.name)
+        self._invalidate(path)
+
+    def on_modified(self, event):
+        path = Path(event.src_path)
+        logger.debug("mkv_detect_modified path=%s", path.name)
+        if self._wait_for_complete(path):
+            self._invalidate(path)
+            self._handle(path)
 
 
 def watch(app) -> None:

@@ -49,16 +49,21 @@ class Config:
     stabilize_timeout: float = 30.0
     scan_interval_minutes: int = 60
     http_timeout: float = 180.0
-    translation_timeout: float = 900.0
+    translation_timeout: float = 3600.0
     libretranslate_max_concurrent_requests: int = 10
+    libretranslate_max_concurrent_detection_requests: int | None = 2
+    libretranslate_fallback_urls: list[str] = field(default_factory=list)
     persistent_sessions: bool = False
     mkv_scan_interval_minutes: int = 180
     mkv_min_confidence: float = 0.85
-    mkv_cache_path: str = "/config/mkv-cache.db"
+    mkv_cache_path: str = "/config/cache.db"
     mkv_dirs: list[str] | None = None
     mkv_cache_enabled: bool = True
     mkv_temp_dir: str = "/tmp/libretranslate-files-translate"
     ensure_langs: list[str] = field(default_factory=list)
+    profiling_enabled: bool = False
+    profiling_ui_host: str = "0.0.0.0"
+    profiling_ui_port: int = 0
 
     @staticmethod
     def _parse_target_languages(raw: str | None) -> list[str]:
@@ -207,6 +212,43 @@ class Config:
         )
         return default
 
+    @staticmethod
+    def _parse_url_list(raw: str | None, default: list[str]) -> list[str]:
+        if raw is None:
+            return list(default)
+        entries: list[str] = []
+        seen: set[str] = set()
+        for part in raw.split(","):
+            cleaned = part.strip()
+            if not cleaned:
+                continue
+            normalized = cleaned.rstrip("/")
+            if not normalized or normalized in seen:
+                continue
+            entries.append(normalized)
+            seen.add(normalized)
+        return entries or list(default)
+
+    @staticmethod
+    def _parse_detection_concurrency(
+        name: str, raw: str | None, default: int | None
+    ) -> int | None:
+        if raw is None:
+            return default
+        try:
+            parsed = int(raw)
+        except ValueError:
+            logger.warning(
+                "use default %s for invalid %s '%s'",
+                default,
+                name,
+                raw,
+            )
+            return default
+        if parsed <= 0:
+            return None
+        return parsed
+
     @classmethod
     def from_env(cls) -> "Config":
         root_dirs = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
@@ -218,15 +260,29 @@ class Config:
         src_ext = f".{src_lang}.srt"
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
 
-        default_mkv_cache = Path("/config/mkv-cache.db")
+        default_mkv_cache = Path("/config/cache.db")
         mkv_cache_raw = os.environ.get("MKV_CACHE_PATH")
         mkv_cache_path = Path(mkv_cache_raw) if mkv_cache_raw else default_mkv_cache
-        mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "mkv_cache_dir_unavailable path=%s error=%s",
+                mkv_cache_path.parent,
+                exc,
+            )
         mkv_dirs = [
             p for p in (os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")).split(":") if p
         ]
         mkv_temp_dir = os.environ.get("MKV_TEMP_DIR", "/tmp/libretranslate-files-translate")
-        Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
+        try:
+            Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "mkv_temp_dir_unavailable path=%s error=%s",
+                mkv_temp_dir,
+                exc,
+            )
 
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
         jellyfin_url = os.environ.get("JELLYFIN_URL") or None
@@ -247,10 +303,18 @@ class Config:
             "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
             "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 180.0),
             "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
-                "TRANSLATION_TIMEOUT", v, 900.0
+                "TRANSLATION_TIMEOUT", v, 3600.0
             ),
             "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS": lambda v: cls._parse_int(
                 "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS", v, 10
+            ),
+            "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS": lambda v: cls._parse_detection_concurrency(
+                "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS",
+                v,
+                2,
+            ),
+            "LIBRETRANSLATE_FALLBACK_URLS": lambda v: cls._parse_url_list(
+                v, []
             ),
             "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
                 "PERSISTENT_SESSIONS", v, False
@@ -263,6 +327,13 @@ class Config:
             ),
             "MKV_CACHE_ENABLED": lambda v: cls._parse_bool(
                 "MKV_CACHE_ENABLED", v, True
+            ),
+            "PROFILING_ENABLED": lambda v: cls._parse_bool(
+                "PROFILING_ENABLED", v, False
+            ),
+            "PROFILING_UI_HOST": lambda v: v or "0.0.0.0",
+            "PROFILING_UI_PORT": lambda v: cls._parse_int(
+                "PROFILING_UI_PORT", v, 0
             ),
         }
 
@@ -283,10 +354,17 @@ class Config:
         libretranslate_max_concurrent_requests = parsed[
             "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS"
         ]
+        libretranslate_max_concurrent_detection_requests = parsed[
+            "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS"
+        ]
+        libretranslate_fallback_urls = parsed["LIBRETRANSLATE_FALLBACK_URLS"]
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
         mkv_scan_interval_minutes = parsed["MKV_SCAN_INTERVAL_MINUTES"]
         mkv_min_confidence = parsed["MKV_MIN_CONFIDENCE"]
         mkv_cache_enabled = parsed["MKV_CACHE_ENABLED"]
+        profiling_enabled = parsed["PROFILING_ENABLED"]
+        profiling_ui_host = parsed["PROFILING_UI_HOST"]
+        profiling_ui_port = parsed["PROFILING_UI_PORT"]
         ensure_langs = cls._parse_ensure_langs(
             os.environ.get("ENSURE_LANGS"), src_lang, target_langs
         )
@@ -297,7 +375,9 @@ class Config:
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
             "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s "
             "libretranslate_max_concurrent_requests=%s mkv_scan_interval_minutes=%s "
-            "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s mkv_temp_dir=%s",
+            "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s "
+            "libretranslate_max_concurrent_detection_requests=%s mkv_temp_dir=%s profiling_enabled=%s "
+            "profiling_ui_host=%s profiling_ui_port=%s",
             root_dirs,
             ensure_langs,
             target_langs,
@@ -321,7 +401,11 @@ class Config:
             mkv_min_confidence,
             str(mkv_cache_path),
             mkv_cache_enabled,
+            libretranslate_max_concurrent_detection_requests,
             mkv_temp_dir,
+            profiling_enabled,
+            profiling_ui_host,
+            profiling_ui_port,
         )
 
         return cls(
@@ -344,6 +428,8 @@ class Config:
             http_timeout=http_timeout,
             translation_timeout=translation_timeout,
             libretranslate_max_concurrent_requests=libretranslate_max_concurrent_requests,
+            libretranslate_max_concurrent_detection_requests=libretranslate_max_concurrent_detection_requests,
+            libretranslate_fallback_urls=libretranslate_fallback_urls,
             persistent_sessions=persistent_sessions,
             mkv_scan_interval_minutes=mkv_scan_interval_minutes,
             mkv_min_confidence=mkv_min_confidence,
@@ -351,4 +437,7 @@ class Config:
             mkv_dirs=mkv_dirs,
             mkv_cache_enabled=mkv_cache_enabled,
             mkv_temp_dir=mkv_temp_dir,
+            profiling_enabled=profiling_enabled,
+            profiling_ui_host=profiling_ui_host,
+            profiling_ui_port=profiling_ui_port,
         )

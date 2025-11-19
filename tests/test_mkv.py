@@ -1,4 +1,5 @@
 import json
+import uuid
 from pathlib import Path
 from typing import cast
 
@@ -242,7 +243,6 @@ def test_pick_source_stream_uses_other_languages():
         _DummyTagger(),
         _FallbackTranslator(),
         ensure_langs=["eng", "nl"],
-        cache=None,
         preferred_source="eng",
     )
     stream = SubtitleStream(
@@ -254,10 +254,47 @@ def test_pick_source_stream_uses_other_languages():
         forced=False,
         default=False,
     )
-    candidates = {"spa": (stream, SubtitleMetrics.from_stream(stream))}
-    source, selected = scanner._pick_source_stream(candidates, "eng")
+    candidates = {
+        "spa": (stream, SubtitleMetrics.from_stream(stream), False)
+    }
+    source, selected = scanner._pick_source_stream(Path("movie.mkv"), candidates, "eng")
     assert source == "spa"
     assert selected is stream
+
+
+def test_map_streams_prefers_non_specialized_tracks():
+    scanner = MkvScanner(
+        [],
+        _DummyTagger(),
+        _FallbackTranslator(),
+        ensure_langs=["eng"],
+    )
+    general = SubtitleStream(
+        ffprobe_index=0,
+        subtitle_index=1,
+        codec="subrip",
+        language="eng",
+        title="English",
+        forced=False,
+        default=False,
+    )
+    general.char_count = 50
+    general.cue_count = 5
+    specialized = SubtitleStream(
+        ffprobe_index=1,
+        subtitle_index=2,
+        codec="subrip",
+        language="eng",
+        title="English SDH",
+        forced=True,
+        default=False,
+    )
+    specialized.char_count = 400
+    specialized.cue_count = 40
+    path = Path("movie.mkv")
+    candidates = scanner._map_streams_to_languages(path, [specialized, general])
+    assert "en" in candidates
+    assert candidates["en"][0] is general
 
 
 def test_ensure_tagged_streams_marks_language():
@@ -276,7 +313,6 @@ def test_ensure_tagged_streams_marks_language():
         DummyTagger(),
         _FallbackTranslator(),
         ensure_langs=["eng"],
-        cache=None,
         preferred_source="eng",
     )
     stream = SubtitleStream(
@@ -513,3 +549,95 @@ def test_non_english_defaults_removed(monkeypatch):
     assert len(calls) == 4
     assert all("flag-default=0" in cmd for cmd in calls[0::2])
     assert all("flag-forced=0" in cmd for cmd in calls[1::2])
+
+
+class _TranslationDummyExtractor:
+    def __init__(self, temp_dir: Path) -> None:
+        self.temp_dir = temp_dir
+
+    def create_temp_path(self, suffix: str) -> Path:
+        path = self.temp_dir / f"temp_{uuid.uuid4().hex}{suffix}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+        return path
+
+    def extract_stream(self, path: Path, stream: SubtitleStream, dest: Path) -> None:
+        dest.write_bytes(b"dummy")
+
+
+class _TranslationDummyTranslator:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
+        return self.payload
+
+
+class _TranslationDummyProbeCache:
+    def list_streams(self, path: Path) -> list[SubtitleStream]:
+        return []
+
+    def invalidate_path(self, path: Path | str) -> None:
+        pass
+
+    def delete_entry(self, path: Path) -> None:
+        pass
+
+
+def _build_translation_scanner(tmp_path: Path, translator: _TranslationDummyTranslator) -> MkvScanner:
+    extractor = _TranslationDummyExtractor(tmp_path)
+
+    DummyTagger = type("DummyTagger", (), {"extractor": extractor})
+
+    return MkvScanner(
+        directories=[str(tmp_path)],
+        tagger=DummyTagger(),
+        translator=translator,
+        ensure_langs=["en"],
+        probe_cache=_TranslationDummyProbeCache(),
+        cache_enabled=False,
+    )
+
+
+def test_translate_stream_writes_new_subtitle(tmp_path: Path) -> None:
+    translator = _TranslationDummyTranslator(b"hello\n")
+    scanner = _build_translation_scanner(tmp_path, translator)
+    source = tmp_path / "movie.mkv"
+    source.write_text("content")
+    stream = SubtitleStream(
+        ffprobe_index=0,
+        subtitle_index=1,
+        codec="subrip",
+        language="eng",
+        title="English",
+        forced=False,
+        default=False,
+    )
+
+    updated = scanner._translate_stream(source, stream, "en", "nl")
+
+    assert updated is True
+    assert (tmp_path / "movie.nl.srt").read_bytes() == b"hello\n"
+
+
+def test_translate_stream_skips_when_content_matches(tmp_path: Path) -> None:
+    translator = _TranslationDummyTranslator(b"hello\n")
+    scanner = _build_translation_scanner(tmp_path, translator)
+    source = tmp_path / "movie.mkv"
+    source.write_text("content")
+    subtitle = tmp_path / "movie.nl.srt"
+    subtitle.write_bytes(b"hello\n")
+    stream = SubtitleStream(
+        ffprobe_index=0,
+        subtitle_index=1,
+        codec="subrip",
+        language="eng",
+        title="English",
+        forced=False,
+        default=False,
+    )
+
+    updated = scanner._translate_stream(source, stream, "en", "nl")
+
+    assert updated is False
+    assert subtitle.read_bytes() == b"hello\n"

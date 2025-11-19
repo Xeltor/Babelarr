@@ -70,7 +70,7 @@ def test_translate_file_error(monkeypatch, tmp_path):
     tmp_file.write_text("dummy")
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
-        assert timeout == 900
+        assert timeout == 3600
         raise requests.ConnectionError("fail")
 
     monkeypatch.setattr(requests, "post", fake_post)
@@ -90,7 +90,7 @@ def test_translate_file(monkeypatch, tmp_path):
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
         headers_seen.append(headers)
-        assert timeout == 900
+        assert timeout == 3600
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
@@ -167,7 +167,7 @@ def test_translate_file_persistent_session(monkeypatch, tmp_path):
     sessions = []
 
     def fake_post(self, url, *, files=None, data=None, timeout, headers=None):
-        assert timeout == 900
+        assert timeout == 3600
         sessions.append(id(self))
         resp = requests.Response()
         resp.status_code = 200

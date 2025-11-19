@@ -9,6 +9,19 @@ from babelarr.libretranslate_api import LibreTranslateAPI
 from babelarr.translator import LibreTranslateClient
 
 
+class _DummyLock:
+    def __init__(self):
+        self.acquired = False
+
+    def acquire(self):
+        assert not self.acquired
+        self.acquired = True
+
+    def release(self):
+        assert self.acquired
+        self.acquired = False
+
+
 def test_translate_file_thread_safety(monkeypatch, tmp_path):
     tmp_file = tmp_path / "a.srt"
     tmp_file.write_text("dummy")
@@ -16,8 +29,10 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     calls: dict[int, dict | None] = {}
     lock = threading.Lock()
 
-    def fake_post(url, *, files=None, data=None, timeout=900, headers=None):
-        assert timeout == 900
+    api = LibreTranslateAPI("http://only")
+
+    def fake_post(url, *, files=None, data=None, timeout=3600, headers=None):
+        assert timeout == api.translation_timeout
         with lock:
             calls[id(threading.current_thread())] = headers
         resp = requests.Response()
@@ -26,8 +41,6 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
         return resp
 
     monkeypatch.setattr(requests, "post", fake_post)
-
-    api = LibreTranslateAPI("http://only")
 
     results: list[bytes] = []
     errors: list[Exception] = []
@@ -51,6 +64,27 @@ def test_translate_file_thread_safety(monkeypatch, tmp_path):
     assert all(h == {"Connection": "close"} for h in calls.values())
 
     api.close()
+
+
+def test_post_concurrency_limits_apply_when_detection_concurrency_disabled():
+    client = LibreTranslateClient(
+        "http://only",
+        "en",
+        max_concurrent_requests=1,
+        max_concurrent_detection_requests=None,
+    )
+    post_lock = _DummyLock()
+    client._post_concurrency = post_lock
+
+    with client._acquire_slot():
+        assert post_lock.acquired
+    assert not post_lock.acquired
+
+    with client._acquire_slot(detection=True):
+        assert post_lock.acquired
+    assert not post_lock.acquired
+
+    client.close()
 
 
 def test_is_available_uses_http_timeout(monkeypatch):
@@ -167,6 +201,36 @@ def test_translate_download(monkeypatch, tmp_path):
     assert result == b"translated"
 
 
+def test_translate_fallback(monkeypatch, tmp_path):
+    tmp_file = tmp_path / "sample.en.srt"
+    tmp_file.write_text("dummy")
+
+    client = LibreTranslateClient(
+        "http://primary",
+        "en",
+        fallback_urls=["http://fallback"],
+    )
+    client.languages = {"en": {"nl"}}
+    client.supported_targets = {"nl"}
+
+    def primary_fail(path, src, dst, api_key):
+        raise requests.ConnectionError("primary down")
+
+    def fallback_translate(path, src, dst, api_key):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"fallback"
+        return resp
+
+    monkeypatch.setattr(client._apis[0], "translate_file", primary_fail)
+    monkeypatch.setattr(client._apis[1], "translate_file", fallback_translate)
+
+    result = client.translate(tmp_file, "nl")
+    client.close()
+
+    assert result == b"fallback"
+
+
 def test_ensure_languages_logs_count(monkeypatch, caplog):
     client = LibreTranslateClient("http://example", "en")
     monkeypatch.setattr(
@@ -176,7 +240,7 @@ def test_ensure_languages_logs_count(monkeypatch, caplog):
     )
     with caplog.at_level(logging.INFO):
         client.ensure_languages()
-    assert "languages_loaded count=2" in caplog.text
+    assert "languages_loaded sources=1 default_targets=2" in caplog.text
 
 
 def test_wait_until_available_logs_service_available(monkeypatch, caplog):
@@ -248,3 +312,34 @@ def test_detect_language_normalizes_percentage_confidence(monkeypatch):
     assert low_threshold is not None
     assert low_threshold.language == "en"
     assert low_threshold.confidence == pytest.approx(0.14)
+
+
+def test_detect_language_uses_detection_concurrency(monkeypatch):
+    client = LibreTranslateClient(
+        "http://example",
+        "en",
+        max_concurrent_requests=1,
+        max_concurrent_detection_requests=1,
+    )
+    detection_started = threading.Event()
+
+    def fake_detect(sample):
+        detection_started.set()
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps([{"language": "en", "confidence": 1.0}]).encode()
+        return resp
+
+    monkeypatch.setattr(client.api, "detect", fake_detect)
+
+    with client._acquire_slot():
+        thread = threading.Thread(
+            target=client.detect_language,
+            args=("text",),
+            kwargs={"min_confidence": 0.0},
+        )
+        thread.start()
+        assert detection_started.wait(0.5)
+
+    thread.join()
+    client.close()
