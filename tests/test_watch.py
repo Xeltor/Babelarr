@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +21,7 @@ class _RecordingHandler(MkvHandler):
 
 def _make_handler(root: Path | None = None) -> _RecordingHandler:
     config = SimpleNamespace(debounce=0.01, stabilize_timeout=1.0)
-    app = SimpleNamespace(config=config)
+    app = SimpleNamespace(config=config, shutdown_event=threading.Event())
     return _RecordingHandler(app, root=root)
 
 
@@ -28,7 +29,9 @@ def test_uppercase_mkv_path_triggers_handler(tmp_path: Path) -> None:
     handler = _make_handler(root=tmp_path)
     event_path = tmp_path / "movie.MKV"
     handler.dispatch(FileCreatedEvent(str(event_path)))
+    assert handler.wait_until_idle(timeout=1.0)
     assert handler.handled == [event_path]
+    handler.stop()
 
 
 def test_ignore_marker_skips_handler(tmp_path: Path) -> None:
@@ -36,4 +39,6 @@ def test_ignore_marker_skips_handler(tmp_path: Path) -> None:
     (tmp_path / ".babelarr_ignore").write_text("")
     event_path = tmp_path / "movie.mkv"
     handler.dispatch(FileCreatedEvent(str(event_path)))
+    assert handler.wait_until_idle(timeout=1.0)
     assert handler.handled == []
+    handler.stop()

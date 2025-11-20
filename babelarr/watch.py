@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 import time
 from pathlib import Path
 
@@ -20,6 +22,18 @@ class MkvHandler(PatternMatchingEventHandler):
         self._recent: dict[Path, float] = {}
         self._last_prune = 0.0
         self._root_path = Path(root) if root is not None else None
+        self._queue: queue.Queue[Path | None] = queue.Queue()
+        self._stop_event: threading.Event = getattr(
+            app, "shutdown_event", threading.Event()
+        )
+        self._idle_event = threading.Event()
+        self._idle_event.set()
+        self._worker = threading.Thread(
+            target=self._process_queue,
+            name="mkv-watch-worker",
+            daemon=True,
+        )
+        self._worker.start()
         super().__init__(
             patterns=["*.mkv"],
             ignore_directories=True,
@@ -48,10 +62,14 @@ class MkvHandler(PatternMatchingEventHandler):
                 return False
 
     def _handle(self, path: Path) -> None:
-        now = time.monotonic()
         if self._should_ignore(path):
             logger.debug("mkv_ignore_path path=%s", path)
             return
+        self._idle_event.clear()
+        self._queue.put(path)
+
+    def _process_path(self, path: Path) -> None:
+        now = time.monotonic()
         if now - self._last_prune > self._debounce:
             for p, ts in list(self._recent.items()):
                 if now - ts > self._debounce:
@@ -93,14 +111,39 @@ class MkvHandler(PatternMatchingEventHandler):
     def on_modified(self, event):
         path = Path(event.src_path)
         logger.debug("mkv_detect_modified path=%s", path.name)
-        if self._wait_for_complete(path):
-            self._invalidate(path)
-            self._handle(path)
+        self._invalidate(path)
+        self._handle(path)
+
+    def _process_queue(self) -> None:
+        while not self._stop_event.is_set() or not self._queue.empty():
+            try:
+                item = self._queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if item is None:
+                self._queue.task_done()
+                break
+            try:
+                self._process_path(item)
+            finally:
+                self._queue.task_done()
+                if self._queue.empty():
+                    self._idle_event.set()
+
+    def wait_until_idle(self, timeout: float | None = None) -> bool:
+        return self._idle_event.wait(timeout=timeout)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._queue.put(None)
+        self._worker.join(timeout=self._max_wait + self._debounce)
+        self._idle_event.set()
 
 
 def watch(app) -> None:
     observer = Observer()
     observer.name = "watchdog"
+    handlers: list[MkvHandler] = []
     for root in app.config.mkv_dirs or []:
         logger.debug("watch_mkv path=%s", Path(root).name)
         root_path = Path(root)
@@ -110,7 +153,9 @@ def watch(app) -> None:
         if not root_path.exists():
             logger.warning("missing_mkv_directory path=%s", root_path.name)
             continue
-        observer.schedule(MkvHandler(app, root=root_path), root, recursive=True)
+        handler = MkvHandler(app, root=root_path)
+        handlers.append(handler)
+        observer.schedule(handler, root, recursive=True)
     observer.start()
     logger.info("observer_started")
     try:
@@ -119,4 +164,6 @@ def watch(app) -> None:
     finally:
         observer.stop()
         observer.join()
+        for handler in handlers:
+            handler.stop()
         logger.info("observer_stopped")
