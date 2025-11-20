@@ -1,7 +1,7 @@
 import logging
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,6 @@ class Config:
     translation_timeout: float = 3600.0
     libretranslate_max_concurrent_requests: int = 10
     libretranslate_max_concurrent_detection_requests: int | None = 2
-    libretranslate_fallback_urls: list[str] = field(default_factory=list)
     persistent_sessions: bool = False
     mkv_scan_interval_minutes: int = 180
     mkv_min_confidence: float = 0.85
@@ -157,23 +156,6 @@ class Config:
         return default
 
     @staticmethod
-    def _parse_url_list(raw: str | None, default: list[str]) -> list[str]:
-        if raw is None:
-            return list(default)
-        entries: list[str] = []
-        seen: set[str] = set()
-        for part in raw.split(","):
-            cleaned = part.strip()
-            if not cleaned:
-                continue
-            normalized = cleaned.rstrip("/")
-            if not normalized or normalized in seen:
-                continue
-            entries.append(normalized)
-            seen.add(normalized)
-        return entries or list(default)
-
-    @staticmethod
     def _parse_detection_concurrency(
         name: str, raw: str | None, default: int | None
     ) -> int | None:
@@ -239,9 +221,6 @@ class Config:
                 v,
                 2,
             ),
-            "LIBRETRANSLATE_FALLBACK_URLS": lambda v: cls._parse_url_list(
-                v, []
-            ),
             "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
                 "PERSISTENT_SESSIONS", v, False
             ),
@@ -282,7 +261,6 @@ class Config:
         libretranslate_max_concurrent_detection_requests = parsed[
             "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS"
         ]
-        libretranslate_fallback_urls = parsed["LIBRETRANSLATE_FALLBACK_URLS"]
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
         mkv_scan_interval_minutes = parsed["MKV_SCAN_INTERVAL_MINUTES"]
         mkv_min_confidence = parsed["MKV_MIN_CONFIDENCE"]
@@ -346,7 +324,6 @@ class Config:
             translation_timeout=translation_timeout,
             libretranslate_max_concurrent_requests=libretranslate_max_concurrent_requests,
             libretranslate_max_concurrent_detection_requests=libretranslate_max_concurrent_detection_requests,
-            libretranslate_fallback_urls=libretranslate_fallback_urls,
             persistent_sessions=persistent_sessions,
             mkv_scan_interval_minutes=mkv_scan_interval_minutes,
             mkv_min_confidence=mkv_min_confidence,

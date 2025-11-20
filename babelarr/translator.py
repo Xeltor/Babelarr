@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol, Sequence
+from typing import Callable, Protocol
 
 import requests
 
@@ -56,7 +56,6 @@ class LibreTranslateClient:
         api_url: str,
         src_lang: str,
         *,
-        fallback_urls: Sequence[str] | None = None,
         retry_count: int = 3,
         backoff_delay: float = 1.0,
         availability_check_interval: float = 30.0,
@@ -77,29 +76,15 @@ class LibreTranslateClient:
         self.availability_check_interval = availability_check_interval
         self.api_key = api_key
 
-        urls: list[str] = []
-        seen: set[str] = set()
-        for candidate in (api_url, *(fallback_urls or ())):
-            if not candidate:
-                continue
-            normalized = candidate.rstrip("/")
-            if not normalized or normalized in seen:
-                continue
-            urls.append(normalized)
-            seen.add(normalized)
-        if not urls:
-            raise ValueError("At least one LibreTranslate URL is required")
-        self._api_urls = tuple(urls)
-        self._apis: tuple[LibreTranslateAPI, ...] = tuple(
-            LibreTranslateAPI(
-                url,
-                http_timeout=http_timeout,
-                translation_timeout=translation_timeout,
-                persistent_session=persistent_session,
-            )
-            for url in self._api_urls
+        normalized_url = api_url.rstrip("/")
+        if not normalized_url:
+            raise ValueError("A LibreTranslate URL is required")
+        self.api = LibreTranslateAPI(
+            normalized_url,
+            http_timeout=http_timeout,
+            translation_timeout=translation_timeout,
+            persistent_session=persistent_session,
         )
-        self.api = self._apis[0]
         self.languages: dict[str, set[str]] | None = None
         self.supported_targets: set[str] | None = None
         if isinstance(max_concurrent_requests, int) and max_concurrent_requests > 0:
@@ -210,41 +195,20 @@ class LibreTranslateClient:
         func: Callable[[LibreTranslateAPI], requests.Response],
         context: str,
     ) -> requests.Response:
-        """Invoke *func* across every configured API until one succeeds."""
-        last_exc: requests.RequestException | None = None
-        for api in self._apis:
-            try:
-                resp = func(api)
-            except requests.RequestException as exc:
-                last_exc = exc
-                logger.debug(
-                    "api_request_failed url=%s context=%s error=%s",
-                    api.base_url,
-                    context,
-                    exc,
-                )
-                continue
-            try:
-                if isinstance(resp, requests.Response):
-                    self._handle_error_response(resp, context)
-            except requests.RequestException as exc:
-                last_exc = exc
-                logger.debug(
-                    "api_error_response url=%s context=%s error=%s",
-                    api.base_url,
-                    context,
-                    exc,
-                )
-                continue
-            if api is not self.api:
-                logger.info(
-                    "fallback_api_used context=%s url=%s",
-                    context,
-                    api.base_url,
-                )
-            return resp
-        assert last_exc is not None
-        raise last_exc
+        """Invoke *func* against the configured API and return the response."""
+        try:
+            resp = func(self.api)
+        except requests.RequestException as exc:
+            logger.debug(
+                "api_request_failed url=%s context=%s error=%s",
+                self.api.base_url,
+                context,
+                exc,
+            )
+            raise
+        if isinstance(resp, requests.Response):
+            self._handle_error_response(resp, context)
+        return resp
 
     def _handle_error_response(self, resp: requests.Response, context: str) -> None:
         """Log and raise for non-200 *resp* responses."""
@@ -423,8 +387,7 @@ class LibreTranslateClient:
         return any(normalized in targets for targets in self.languages.values())
 
     def close(self) -> None:
-        for api in self._apis:
-            api.close()
+        self.api.close()
 
     @staticmethod
     def _normalize_confidence(raw: float) -> float:

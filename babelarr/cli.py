@@ -153,7 +153,6 @@ def main(argv: list[str] | None = None) -> None:
         translation_timeout=config.translation_timeout,
         max_concurrent_requests=config.libretranslate_max_concurrent_requests,
         max_concurrent_detection_requests=config.libretranslate_max_concurrent_detection_requests,
-        fallback_urls=config.libretranslate_fallback_urls,
         profiler=profiler,
     )
     validate_ensure_languages(config, translator)

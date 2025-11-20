@@ -201,36 +201,6 @@ def test_translate_download(monkeypatch, tmp_path):
     assert result == b"translated"
 
 
-def test_translate_fallback(monkeypatch, tmp_path):
-    tmp_file = tmp_path / "sample.en.srt"
-    tmp_file.write_text("dummy")
-
-    client = LibreTranslateClient(
-        "http://primary",
-        "en",
-        fallback_urls=["http://fallback"],
-    )
-    client.languages = {"en": {"nl"}}
-    client.supported_targets = {"nl"}
-
-    def primary_fail(path, src, dst, api_key):
-        raise requests.ConnectionError("primary down")
-
-    def fallback_translate(path, src, dst, api_key):
-        resp = requests.Response()
-        resp.status_code = 200
-        resp._content = b"fallback"
-        return resp
-
-    monkeypatch.setattr(client._apis[0], "translate_file", primary_fail)
-    monkeypatch.setattr(client._apis[1], "translate_file", fallback_translate)
-
-    result = client.translate(tmp_file, "nl")
-    client.close()
-
-    assert result == b"fallback"
-
-
 def test_ensure_languages_logs_count(monkeypatch, caplog):
     client = LibreTranslateClient("http://example", "en")
     monkeypatch.setattr(
