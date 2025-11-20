@@ -262,6 +262,42 @@ def test_pick_source_stream_uses_other_languages():
     assert selected is stream
 
 
+def test_pick_source_prefers_english_when_available():
+    translator = _FallbackTranslator()
+    scanner = MkvScanner(
+        [],
+        _DummyTagger(),
+        translator,
+        ensure_langs=["bos"],
+        preferred_source="bos",
+    )
+    english = SubtitleStream(
+        ffprobe_index=0,
+        subtitle_index=1,
+        codec="subrip",
+        language="eng",
+        title="English",
+        forced=False,
+        default=False,
+    )
+    spanish = SubtitleStream(
+        ffprobe_index=1,
+        subtitle_index=2,
+        codec="subrip",
+        language="spa",
+        title="Spanish",
+        forced=False,
+        default=False,
+    )
+    candidates = {
+        "en": (english, SubtitleMetrics.from_stream(english), False),
+        "es": (spanish, SubtitleMetrics.from_stream(spanish), False),
+    }
+    source, selected = scanner._pick_source_stream(Path("movie.mkv"), candidates, "bs")
+    assert source == "en"
+    assert selected is english
+
+
 def test_map_streams_prefers_non_specialized_tracks():
     scanner = MkvScanner(
         [],

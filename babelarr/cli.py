@@ -17,6 +17,14 @@ from .translator import LibreTranslateClient
 logger = logging.getLogger(__name__)
 
 
+def _preferred_source_language(ensure_langs: list[str]) -> str:
+    if "en" in ensure_langs:
+        return "en"
+    if ensure_langs:
+        return ensure_langs[0]
+    return "en"
+
+
 def validate_environment(config: Config) -> None:
     """Validate MKV directories and translation service availability.
 
@@ -90,26 +98,12 @@ def validate_ensure_languages(config: Config, translator: LibreTranslateClient) 
 
     if supported_langs != original_langs:
         config.ensure_langs = supported_langs
-    ensure_langs = supported_langs
 
-    if len(ensure_langs) > 1:
-        missing_paths: list[str] = []
-        for target in ensure_langs:
-            has_source = any(
-                translator.supports_translation(src, target)
-                for src in ensure_langs
-                if src != target
-            )
-            if not has_source:
-                missing_paths.append(target)
-        if missing_paths:
-            logger.error(
-                "ensure_langs_missing_source langs=%s",
-                ", ".join(missing_paths),
-            )
-            raise SystemExit("Unsupported ensure language configuration")
-
-    logger.info("ensure_langs langs=%s", ", ".join(ensure_langs))
+    logger.info(
+        "ensure_langs langs=%s preferred_source=%s",
+        ", ".join(config.ensure_langs),
+        _preferred_source_language(config.ensure_langs),
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -146,7 +140,7 @@ def main(argv: list[str] | None = None) -> None:
         host=config.profiling_ui_host,
         port=config.profiling_ui_port,
     )
-    preferred_source = config.ensure_langs[0]
+    preferred_source = _preferred_source_language(config.ensure_langs)
     translator = LibreTranslateClient(
         config.api_url,
         preferred_source,

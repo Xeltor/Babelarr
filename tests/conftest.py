@@ -19,11 +19,9 @@ class _DummyTranslator:
 def config(tmp_path):
     return Config(
         root_dirs=[str(tmp_path)],
-        target_langs=["nl"],
-        src_lang="en",
-        src_ext=".en.srt",
         api_url="http://example",
         workers=1,
+        ensure_langs=["en"],
         retry_count=2,
         backoff_delay=0,
         mkv_dirs=[str(tmp_path)],

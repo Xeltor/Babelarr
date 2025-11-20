@@ -53,9 +53,7 @@ docker run -d --name babelarr \
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WATCH_DIRS` | `/data` | Colon-separated directories to scan for subtitles. |
-| `ENSURE_LANGS` | `en,nl,bs` | Ordered comma-separated languages that Babelarr should ensure are available; missing languages are translated from the others, and the first entry is preferred as the default source. |
-| `SRC_LANG` | `en` | (Legacy) Two-letter source language that `ENSURE_LANGS` falls back to when not set. |
-| `TARGET_LANGS` | `nl,bs` | (Legacy) Backward-compatible list of target languages that `ENSURE_LANGS` also defaults to when unspecified. |
+| `ENSURE_LANGS` | `en,nl,bs` | Ordered comma-separated languages that Babelarr should ensure are available; missing languages are translated from available MKV streams, with English full-length non-SDH tracks preferred when present. |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | Base URL of the LibreTranslate instance (no path). |
 | `LIBRETRANSLATE_API_KEY` | *(unset)* | API key for authenticated LibreTranslate instances. |
 | `JELLYFIN_URL` | *(unset)* | Base URL of the Jellyfin server for library refreshes. |
@@ -78,7 +76,7 @@ docker run -d --name babelarr \
 | `MKV_CACHE_PATH` | `/config/cache.db` | Path for the combined cache (MKV metadata + probe results) that speeds up scans. |
 | `MKV_CACHE_ENABLED` | `true` | Disable to force reprocessing of MKVs without reading/writing the cache (useful for testing). |
 
-If `ENSURE_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup; when `ENSURE_LANGS` is unset it falls back to `SRC_LANG` plus `TARGET_LANGS` for backwards compatibility.
+If `ENSURE_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup; when `ENSURE_LANGS` is unset it defaults to `en,nl,bs`.
 
 Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and `LOG_FILE` environment variables respectively.
 
@@ -113,8 +111,7 @@ services:
       - ./config:/config
     environment:
       WATCH_DIRS: "/data"
-      SRC_LANG: "en"
-      TARGET_LANGS: "nl,bs"
+      ENSURE_LANGS: "en,nl,bs"
       LIBRETRANSLATE_URL: "http://libretranslate:5000"
 ```
 

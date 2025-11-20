@@ -62,7 +62,7 @@ class Application:
                 db_path=self.config.mkv_cache_path,
                 profiler=self.profiler,
             )
-            preferred_source = (
+            preferred_source = "en" if "en" in self.config.ensure_langs else (
                 self.config.ensure_langs[0] if self.config.ensure_langs else None
             )
             self._mkv_scanner = MkvScanner(

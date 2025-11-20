@@ -11,11 +11,9 @@ def test_validate_environment_filters_mkv_dirs(tmp_path, monkeypatch, caplog):
     missing_dir = tmp_path / "missing"
     config = Config(
         root_dirs=["/unused"],
-        target_langs=["nl"],
-        src_lang="en",
-        src_ext=".en.srt",
         api_url="http://example",
         workers=1,
+        ensure_langs=["en"],
         retry_count=1,
         backoff_delay=0,
         mkv_dirs=[str(valid_dir), str(missing_dir)],

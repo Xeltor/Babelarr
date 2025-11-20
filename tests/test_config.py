@@ -5,18 +5,18 @@ import pytest
 from babelarr.config import Config
 
 
-def test_parse_target_languages_filters_and_normalizes(caplog):
+def test_parse_ensure_languages_filters_and_normalizes(caplog):
     raw = "nl, , EN, xx1, nl"
     with caplog.at_level(logging.WARNING, logger="babelarr"):
-        langs = Config._parse_target_languages(raw)
+        langs = Config._parse_ensure_langs(raw, default=["en"])
     assert langs == ["nl", "en"]
     assert "ignore empty language code" in caplog.text
     assert "ignore invalid language code 'xx1'" in caplog.text
 
 
-def test_parse_target_languages_empty_raises():
+def test_parse_ensure_languages_empty_raises():
     with pytest.raises(ValueError):
-        Config._parse_target_languages("")
+        Config._parse_ensure_langs("", default=["en"])
 
 
 def test_parse_workers_caps_and_defaults(caplog):
@@ -33,10 +33,17 @@ def test_parse_scan_interval_invalid(caplog):
     assert "invalid SCAN_INTERVAL_MINUTES" in caplog.text
 
 
-def test_from_env_rejects_empty_target_langs(monkeypatch):
-    monkeypatch.setenv("TARGET_LANGS", "")
+def test_from_env_rejects_empty_ensure_langs(monkeypatch):
+    monkeypatch.setenv("ENSURE_LANGS", "")
     with pytest.raises(ValueError):
         Config.from_env()
+
+
+def test_from_env_defaults_to_builtin_list(monkeypatch, tmp_path):
+    monkeypatch.delenv("ENSURE_LANGS", raising=False)
+    monkeypatch.setenv("WATCH_DIRS", str(tmp_path))
+    cfg = Config.from_env()
+    assert cfg.ensure_langs == ["en", "nl", "bs"]
 
 
 def test_invalid_workers_falls_back_to_default(monkeypatch, caplog):

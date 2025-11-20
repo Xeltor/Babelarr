@@ -14,9 +14,7 @@ class Config:
 
     Attributes:
         root_dirs: Legacy list of watch directories (mirrors mkv_dirs for compatibility).
-        target_langs: Languages to translate into.
-        src_lang: Source subtitle language.
-        src_ext: Source subtitle file extension derived from src_lang.
+        ensure_langs: Ordered languages that should exist for each MKV.
         api_url: Base URL of the translation API.
         workers: Number of translation worker threads.
         api_key: Optional API key for authenticated requests.
@@ -30,16 +28,13 @@ class Config:
         mkv_scan_interval_minutes: Interval between MKV rescans.
         mkv_min_confidence: Minimum confidence required for tagging.
         mkv_cache_path: Path to persisted MKV processing state.
-        ensure_langs: Ordered list of languages the scanner should ensure exist.
         mkv_dirs: Directories to scan/watch for MKV files.
     """
 
     root_dirs: list[str]
-    target_langs: list[str]
-    src_lang: str
-    src_ext: str
     api_url: str
     workers: int
+    ensure_langs: list[str]
     api_key: str | None = None
     jellyfin_url: str | None = None
     jellyfin_token: str | None = None
@@ -61,51 +56,13 @@ class Config:
     mkv_dirs: list[str] | None = None
     mkv_cache_enabled: bool = True
     mkv_temp_dir: str = "/tmp/libretranslate-files-translate"
-    ensure_langs: list[str] = field(default_factory=list)
     profiling_enabled: bool = False
     profiling_ui_host: str = "0.0.0.0"
     profiling_ui_port: int = 0
 
     @staticmethod
-    def _parse_target_languages(raw: str | None) -> list[str]:
-        raw_langs = (raw if raw is not None else "nl,bs").split(",")
-        target_langs: list[str] = []
-        seen: set[str] = set()
-        for lang in raw_langs:
-            cleaned = lang.strip()
-            if not cleaned:
-                logger.warning("ignore empty language code in TARGET_LANGS")
-                continue
-            if not cleaned.isalpha():
-                logger.warning(
-                    "ignore invalid language code '%s' in TARGET_LANGS", cleaned
-                )
-                continue
-            normalized = cleaned.lower()
-            if normalized in seen:
-                logger.debug(
-                    "ignore duplicate language code '%s' in TARGET_LANGS", cleaned
-                )
-                continue
-            target_langs.append(normalized)
-            seen.add(normalized)
-        if not target_langs:
-            logger.error("found no valid languages in TARGET_LANGS")
-            raise ValueError(
-                "TARGET_LANGS must contain at least one valid language code",
-            )
-        return target_langs
-
-    @staticmethod
-    def _parse_ensure_langs(
-        raw: str | None,
-        src_lang: str,
-        target_langs: list[str],
-    ) -> list[str]:
-        if raw:
-            raw_langs = raw.split(",")
-        else:
-            raw_langs = [src_lang, *target_langs]
+    def _parse_ensure_langs(raw: str | None, default: list[str]) -> list[str]:
+        raw_langs = raw.split(",") if raw is not None else list(default)
         ensure_langs: list[str] = []
         seen: set[str] = set()
         for lang in raw_langs:
@@ -252,12 +209,11 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
-        if not src_lang.isalpha():
-            logger.warning("use default 'en' for invalid SRC_LANG '%s'", src_lang)
-            src_lang = "en"
-        src_ext = f".{src_lang}.srt"
         api_url = os.environ.get("LIBRETRANSLATE_URL", "http://libretranslate:5000")
+        ensure_langs = cls._parse_ensure_langs(
+            os.environ.get("ENSURE_LANGS"),
+            default=["en", "nl", "bs"],
+        )
 
         default_mkv_cache = Path("/config/cache.db")
         mkv_cache_raw = os.environ.get("MKV_CACHE_PATH")
@@ -266,10 +222,10 @@ class Config:
             mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             logger.warning(
-            "mkv_cache_dir_unavailable path=%s error=%s",
-            mkv_cache_path.parent,
-            exc,
-        )
+                "mkv_cache_dir_unavailable path=%s error=%s",
+                mkv_cache_path.parent,
+                exc,
+            )
         mkv_dirs_raw = os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")
         mkv_dirs = [p for p in mkv_dirs_raw.split(":") if p]
         root_dirs = list(mkv_dirs)
@@ -288,7 +244,6 @@ class Config:
         jellyfin_token = os.environ.get("JELLYFIN_TOKEN") or None
 
         parsers: dict[str, Callable[[str | None], Any]] = {
-            "TARGET_LANGS": cls._parse_target_languages,
             "WORKERS": cls._parse_workers,
             "RETRY_COUNT": lambda v: cls._parse_int("RETRY_COUNT", v, 3),
             "BACKOFF_DELAY": lambda v: cls._parse_float("BACKOFF_DELAY", v, 1.0),
@@ -340,7 +295,6 @@ class Config:
             name: parser(os.environ.get(name)) for name, parser in parsers.items()
         }
 
-        target_langs = parsed["TARGET_LANGS"]
         workers = parsed["WORKERS"]
         retry_count = parsed["RETRY_COUNT"]
         backoff_delay = parsed["BACKOFF_DELAY"]
@@ -364,12 +318,9 @@ class Config:
         profiling_enabled = parsed["PROFILING_ENABLED"]
         profiling_ui_host = parsed["PROFILING_UI_HOST"]
         profiling_ui_port = parsed["PROFILING_UI_PORT"]
-        ensure_langs = cls._parse_ensure_langs(
-            os.environ.get("ENSURE_LANGS"), src_lang, target_langs
-        )
 
         logger.info(
-            "loaded config mkv_dirs=%s ensure_langs=%s target_langs=%s src_lang=%s api_url=%s "
+            "loaded config mkv_dirs=%s ensure_langs=%s api_url=%s "
             "workers=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
             "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s "
@@ -379,8 +330,6 @@ class Config:
             "profiling_ui_host=%s profiling_ui_port=%s",
             mkv_dirs,
             ensure_langs,
-            target_langs,
-            src_lang,
             api_url,
             workers,
             bool(api_key),
@@ -409,9 +358,6 @@ class Config:
 
         return cls(
             root_dirs=root_dirs,
-            target_langs=target_langs,
-            src_lang=src_lang,
-            src_ext=src_ext,
             ensure_langs=ensure_langs,
             api_url=api_url,
             workers=workers,

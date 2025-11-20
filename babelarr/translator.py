@@ -169,8 +169,10 @@ class LibreTranslateClient:
             normalized[code] = normalized_targets
         self.languages = normalized
         if self.src_lang not in self.languages:
-            raise ValueError(f"Unsupported source language: {self.src_lang}")
-        self.supported_targets = self.languages[self.src_lang]
+            logger.warning("default_source_unsupported source=%s", self.src_lang)
+            self.supported_targets = set()
+        else:
+            self.supported_targets = self.languages[self.src_lang]
         logger.info(
             "languages_loaded sources=%d default_targets=%d",
             len(self.languages),

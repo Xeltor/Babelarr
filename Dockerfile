@@ -23,5 +23,5 @@ USER app:app
 
 # Example environment variables:
 #   -e WATCH_DIRS="/subs:/incoming"
-#   -e TARGET_LANGS="nl,bs"
+#   -e ENSURE_LANGS="en,nl,bs"
 ENTRYPOINT ["babelarr"]

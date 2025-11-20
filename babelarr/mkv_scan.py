@@ -526,25 +526,34 @@ class MkvScanner:
     ) -> tuple[str | None, SubtitleStream | None]:
         order: list[str] = []
         seen: set[str] = set()
-        if self.preferred_source and self.preferred_source in candidates:
-            order.append(self.preferred_source)
-            seen.add(self.preferred_source)
+
+        for lang in ("en", self.preferred_source):
+            if not lang or lang == target or lang in seen:
+                continue
+            if lang in candidates:
+                order.append(lang)
+                seen.add(lang)
+
         for lang in self.ensure_langs:
             if lang == target or lang in seen:
                 continue
-            if lang not in candidates:
+            if lang in candidates:
+                order.append(lang)
+                seen.add(lang)
+
+        scored_candidates: list[tuple[str, float]] = []
+        for lang, (_, metrics, specialized) in candidates.items():
+            if lang in seen or lang == target:
                 continue
-            order.append(lang)
-            seen.add(lang)
-        for lang in sorted(candidates):
-            if lang == target or lang in seen:
-                continue
-            order.append(lang)
-            seen.add(lang)
+            score = self._score_with_specialization(metrics, specialized)
+            scored_candidates.append((lang, score))
+        scored_candidates.sort(key=lambda item: item[1], reverse=True)
+        order.extend([lang for lang, _ in scored_candidates])
+
         for lang in order:
             if not self.translator.supports_translation(lang, target):
                 continue
-            if lang not in self.ensure_langs and lang != self.preferred_source:
+            if lang not in self.ensure_langs and lang not in {"en", self.preferred_source}:
                 logger.info(
                     "using_fallback_source path=%s target=%s source=%s",
                     path.name,
