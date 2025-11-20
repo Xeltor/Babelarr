@@ -26,6 +26,7 @@ def config(tmp_path):
         workers=1,
         retry_count=2,
         backoff_delay=0,
+        mkv_dirs=[str(tmp_path)],
     )
 
 

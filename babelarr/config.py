@@ -13,7 +13,7 @@ class Config:
     """Application configuration.
 
     Attributes:
-        root_dirs: Directories to watch for subtitle files.
+        root_dirs: Legacy list of watch directories (mirrors mkv_dirs for compatibility).
         target_langs: Languages to translate into.
         src_lang: Source subtitle language.
         src_ext: Source subtitle file extension derived from src_lang.
@@ -31,6 +31,7 @@ class Config:
         mkv_min_confidence: Minimum confidence required for tagging.
         mkv_cache_path: Path to persisted MKV processing state.
         ensure_langs: Ordered list of languages the scanner should ensure exist.
+        mkv_dirs: Directories to scan/watch for MKV files.
     """
 
     root_dirs: list[str]
@@ -251,8 +252,6 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        root_dirs = [p for p in os.environ.get("WATCH_DIRS", "/data").split(":") if p]
-
         src_lang = os.environ.get("SRC_LANG", "en").strip().lower()
         if not src_lang.isalpha():
             logger.warning("use default 'en' for invalid SRC_LANG '%s'", src_lang)
@@ -267,13 +266,13 @@ class Config:
             mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             logger.warning(
-                "mkv_cache_dir_unavailable path=%s error=%s",
-                mkv_cache_path.parent,
-                exc,
-            )
-        mkv_dirs = [
-            p for p in (os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")).split(":") if p
-        ]
+            "mkv_cache_dir_unavailable path=%s error=%s",
+            mkv_cache_path.parent,
+            exc,
+        )
+        mkv_dirs_raw = os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")
+        mkv_dirs = [p for p in mkv_dirs_raw.split(":") if p]
+        root_dirs = list(mkv_dirs)
         mkv_temp_dir = os.environ.get("MKV_TEMP_DIR", "/tmp/libretranslate-files-translate")
         try:
             Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
@@ -370,7 +369,7 @@ class Config:
         )
 
         logger.info(
-            "loaded config root_dirs=%s ensure_langs=%s target_langs=%s src_lang=%s api_url=%s "
+            "loaded config mkv_dirs=%s ensure_langs=%s target_langs=%s src_lang=%s api_url=%s "
             "workers=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
             "retry_count=%s backoff_delay=%s availability_check_interval=%s debounce=%s scan_interval_minutes=%s "
             "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s "
@@ -378,7 +377,7 @@ class Config:
             "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s "
             "libretranslate_max_concurrent_detection_requests=%s mkv_temp_dir=%s profiling_enabled=%s "
             "profiling_ui_host=%s profiling_ui_port=%s",
-            root_dirs,
+            mkv_dirs,
             ensure_langs,
             target_langs,
             src_lang,

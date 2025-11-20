@@ -18,34 +18,36 @@ logger = logging.getLogger(__name__)
 
 
 def validate_environment(config: Config) -> None:
-    """Validate watch directories and translation service availability.
+    """Validate MKV directories and translation service availability.
 
-    Updates ``config.root_dirs`` to only include readable directories. If none
+    Updates ``config.mkv_dirs`` to only include readable directories. If none
     remain, the process exits with a clear error. The translation service is
     probed with a ``HEAD`` request and any failure is logged, but startup
     continues and workers will wait until the service becomes reachable.
     """
 
     valid_dirs: list[str] = []
-    for d in config.root_dirs:
+    mkv_dirs = config.mkv_dirs or []
+    for d in mkv_dirs:
         path = Path(d)
         if not path.is_dir():
-            logger.warning("missing_watch_dir path=%s", path.name)
+            logger.warning("missing_mkv_dir path=%s", path.name)
             continue
         if not os.access(path, os.R_OK):
-            logger.warning("unreadable_watch_dir path=%s", path.name)
+            logger.warning("unreadable_mkv_dir path=%s", path.name)
             continue
         valid_dirs.append(d)
 
     if not valid_dirs:
         logger.error(
-            "no_readable_dirs dirs=%s", [Path(d).name for d in config.root_dirs]
+            "no_readable_mkv_dirs dirs=%s", [Path(d).name for d in mkv_dirs]
         )
-        raise SystemExit("No valid watch directories configured")
+        raise SystemExit("No valid MKV directories configured")
 
-    config.root_dirs = valid_dirs
+    config.mkv_dirs = valid_dirs
+    config.root_dirs = list(valid_dirs)
     logger.info(
-        "environment_ready dirs=%s",
+        "environment_ready mkv_dirs=%s",
         [Path(d).name for d in valid_dirs],
     )
 
