@@ -26,13 +26,6 @@ def test_parse_workers_caps_and_defaults(caplog):
     assert "cap workers" in caplog.text
 
 
-def test_parse_scan_interval_invalid(caplog):
-    with caplog.at_level(logging.WARNING, logger="babelarr"):
-        interval = Config._parse_scan_interval("bad")
-    assert interval == 60
-    assert "invalid SCAN_INTERVAL_MINUTES" in caplog.text
-
-
 def test_from_env_rejects_empty_ensure_langs(monkeypatch):
     monkeypatch.setenv("ENSURE_LANGS", "")
     with pytest.raises(ValueError):
@@ -54,36 +47,25 @@ def test_invalid_workers_falls_back_to_default(monkeypatch, caplog):
     assert "invalid WORKERS" in caplog.text
 
 
-def test_invalid_retry_count_falls_back_to_default(monkeypatch, caplog):
-    monkeypatch.setenv("RETRY_COUNT", "bad")
+@pytest.mark.parametrize(
+    ("env_var", "value", "attr"),
+    [
+        ("RETRY_COUNT", "10", "retry_count"),
+        ("BACKOFF_DELAY", "5", "backoff_delay"),
+        ("AVAILABILITY_CHECK_INTERVAL", "99", "availability_check_interval"),
+        ("DEBOUNCE_SECONDS", "9.9", "debounce"),
+        ("STABILIZE_TIMEOUT", "999", "stabilize_timeout"),
+        ("SCAN_INTERVAL_MINUTES", "999", "scan_interval_minutes"),
+        ("HTTP_TIMEOUT", "1", "http_timeout"),
+        ("TRANSLATION_TIMEOUT", "1", "translation_timeout"),
+    ],
+)
+def test_internal_defaults_ignore_overrides(monkeypatch, caplog, env_var, value, attr):
+    monkeypatch.setenv(env_var, value)
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
-    assert cfg.retry_count == 3
-    assert "invalid RETRY_COUNT" in caplog.text
-
-
-def test_invalid_backoff_delay_falls_back_to_default(monkeypatch, caplog):
-    monkeypatch.setenv("BACKOFF_DELAY", "bad")
-    with caplog.at_level(logging.WARNING, logger="babelarr"):
-        cfg = Config.from_env()
-    assert cfg.backoff_delay == 1.0
-    assert "invalid BACKOFF_DELAY" in caplog.text
-
-
-def test_invalid_debounce_falls_back_to_default(monkeypatch, caplog):
-    monkeypatch.setenv("DEBOUNCE_SECONDS", "bad")
-    with caplog.at_level(logging.WARNING, logger="babelarr"):
-        cfg = Config.from_env()
-    assert cfg.debounce == 0.1
-    assert "invalid DEBOUNCE_SECONDS" in caplog.text
-
-
-def test_invalid_scan_interval_falls_back_to_default(monkeypatch, caplog):
-    monkeypatch.setenv("SCAN_INTERVAL_MINUTES", "bad")
-    with caplog.at_level(logging.WARNING, logger="babelarr"):
-        cfg = Config.from_env()
-    assert cfg.scan_interval_minutes == 60
-    assert "invalid SCAN_INTERVAL_MINUTES" in caplog.text
+    assert getattr(cfg, attr) == getattr(Config, attr)
+    assert env_var.lower() not in caplog.text.lower()
 
 
 def test_persistent_sessions_flag(monkeypatch):

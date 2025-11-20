@@ -61,14 +61,6 @@ docker run -d --name babelarr \
 | `LOG_LEVEL` | `INFO` | Controls verbosity of console output. |
 | `LOG_FILE` | *(unset)* | If set, writes logs to the specified file. |
 | `WORKERS` | `1` | Number of translation worker threads (maximum 10). |
-| `RETRY_COUNT` | `3` | Translation retry attempts. |
-| `BACKOFF_DELAY` | `1` | Initial delay between retries in seconds. |
-| `DEBOUNCE_SECONDS` | `0.1` | Wait time to ensure files have finished writing before rescheduling a scan. |
-| `STABILIZE_TIMEOUT` | `30` | Max seconds to wait for a subtitle file to stop growing before translating. |
-| `SCAN_INTERVAL_MINUTES` | `60` | Minutes between full directory scans. |
-| `AVAILABILITY_CHECK_INTERVAL` | `30` | Seconds between checks for LibreTranslate availability. |
-| `HTTP_TIMEOUT` | `180` | Timeout in seconds for non-translation HTTP requests. |
-| `TRANSLATION_TIMEOUT` | `3600` | Timeout in seconds for translation requests. |
 | `LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS` | `10` | Maximum number of LibreTranslate requests (translations or detections) allowed simultaneously. |
 | `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
 | `MKV_SCAN_INTERVAL_MINUTES` | `180` | Minutes between MKV rescans. |
@@ -81,6 +73,8 @@ If `ENSURE_LANGS` is empty or only contains invalid entries, the application rai
 Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and `LOG_FILE` environment variables respectively.
 
 `LIBRETRANSLATE_URL` should include only the protocol, hostname or IP, and port of your LibreTranslate instance. The `translate_file` API path is appended automatically.
+
+Retry/backoff timing, debounce, stabilization, and HTTP timeout values are internal defaults tuned for typical workloads and are not configurable via environment variables.
 
 The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation.
 

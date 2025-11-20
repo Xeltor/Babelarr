@@ -112,20 +112,6 @@ class Config:
         return workers
 
     @staticmethod
-    def _parse_scan_interval(raw: str | None) -> int:
-        default_scan_interval = 60
-        raw_scan = raw or str(default_scan_interval)
-        try:
-            return int(raw_scan)
-        except ValueError:
-            logger.warning(
-                "use default %s for invalid SCAN_INTERVAL_MINUTES '%s'",
-                default_scan_interval,
-                raw_scan,
-            )
-            return default_scan_interval
-
-    @staticmethod
     def _parse_int(name: str, raw: str | None, default: int) -> int:
         raw_val = raw or str(default)
         try:
@@ -245,20 +231,6 @@ class Config:
 
         parsers: dict[str, Callable[[str | None], Any]] = {
             "WORKERS": cls._parse_workers,
-            "RETRY_COUNT": lambda v: cls._parse_int("RETRY_COUNT", v, 3),
-            "BACKOFF_DELAY": lambda v: cls._parse_float("BACKOFF_DELAY", v, 1.0),
-            "AVAILABILITY_CHECK_INTERVAL": lambda v: cls._parse_float(
-                "AVAILABILITY_CHECK_INTERVAL", v, 30.0
-            ),
-            "DEBOUNCE_SECONDS": lambda v: cls._parse_float("DEBOUNCE_SECONDS", v, 0.1),
-            "STABILIZE_TIMEOUT": lambda v: cls._parse_float(
-                "STABILIZE_TIMEOUT", v, 30.0
-            ),
-            "SCAN_INTERVAL_MINUTES": cls._parse_scan_interval,
-            "HTTP_TIMEOUT": lambda v: cls._parse_float("HTTP_TIMEOUT", v, 180.0),
-            "TRANSLATION_TIMEOUT": lambda v: cls._parse_float(
-                "TRANSLATION_TIMEOUT", v, 3600.0
-            ),
             "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS": lambda v: cls._parse_int(
                 "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS", v, 10
             ),
@@ -296,14 +268,14 @@ class Config:
         }
 
         workers = parsed["WORKERS"]
-        retry_count = parsed["RETRY_COUNT"]
-        backoff_delay = parsed["BACKOFF_DELAY"]
-        availability_check_interval = parsed["AVAILABILITY_CHECK_INTERVAL"]
-        debounce = parsed["DEBOUNCE_SECONDS"]
-        stabilize_timeout = parsed["STABILIZE_TIMEOUT"]
-        scan_interval_minutes = parsed["SCAN_INTERVAL_MINUTES"]
-        http_timeout = parsed["HTTP_TIMEOUT"]
-        translation_timeout = parsed["TRANSLATION_TIMEOUT"]
+        retry_count = cls.retry_count
+        backoff_delay = cls.backoff_delay
+        availability_check_interval = cls.availability_check_interval
+        debounce = cls.debounce
+        stabilize_timeout = cls.stabilize_timeout
+        scan_interval_minutes = cls.scan_interval_minutes
+        http_timeout = cls.http_timeout
+        translation_timeout = cls.translation_timeout
         libretranslate_max_concurrent_requests = parsed[
             "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS"
         ]
