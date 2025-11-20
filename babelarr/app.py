@@ -13,6 +13,7 @@ from .jellyfin_api import JellyfinClient
 from .mkv import MkvSubtitleTagger
 from .mkv_probe_cache import MkvProbeCache
 from .mkv_scan import MkvScanner
+from .mkv_work_index import MkvWorkIndex
 from .mkv_workflow import MkvWorkflow
 from .profiling import WorkloadProfiler
 from .profiling_ui import ProfilingDashboard
@@ -40,6 +41,7 @@ class Application:
         self.shutdown_event = threading.Event()
         self._probe_cache: MkvProbeCache | None = None
         self._mkv_scanner: MkvScanner | None = None
+        self._work_index: MkvWorkIndex | None = None
         self.workflow: MkvWorkflow | None = None
         self.profiling_dashboard = profiling_dashboard
 
@@ -54,6 +56,8 @@ class Application:
     def invalidate_mkv_cache_state(self, path: Path) -> None:
         if self._probe_cache:
             self._probe_cache.invalidate_path(path)
+        if self._work_index:
+            self._work_index.delete(path)
 
     def run(self) -> None:
         if self.mkv_tagger and self.config.mkv_dirs:
@@ -62,6 +66,7 @@ class Application:
                 db_path=self.config.mkv_cache_path,
                 profiler=self.profiler,
             )
+            self._work_index = MkvWorkIndex(self.config.mkv_cache_path)
             preferred_source = "en" if "en" in self.config.ensure_langs else (
                 self.config.ensure_langs[0] if self.config.ensure_langs else None
             )
@@ -75,14 +80,20 @@ class Application:
                 preferred_source=preferred_source,
                 jellyfin_client=self.jellyfin,
                 profiler=self.profiler,
+                work_index=self._work_index,
             )
             self.workflow = MkvWorkflow(
                 scanner=self._mkv_scanner,
                 worker_count=self.config.workers,
                 shutdown_event=self.shutdown_event,
                 profiler=self.profiler,
+                work_index=self._work_index,
             )
             self.workflow.start()
+            if self.profiling_dashboard:
+                self.profiling_dashboard.register_status_provider(
+                    "mkv_queue", self.workflow.queue_status
+                )
             self.request_mkv_scan()
             schedule.every(self.config.mkv_scan_interval_minutes).minutes.do(
                 self.request_mkv_scan

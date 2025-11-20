@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .mkv_scan import MkvScanner
+from .mkv_work_index import MkvWorkIndex
 from .profiling import WorkloadProfiler
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,13 @@ class MkvWorkflow:
         worker_count: int,
         shutdown_event: threading.Event,
         profiler: WorkloadProfiler | None = None,
+        work_index: MkvWorkIndex | None = None,
     ) -> None:
         self.scanner = scanner
         self.worker_count = max(1, worker_count)
         self.shutdown_event = shutdown_event
         self.profiler = profiler or WorkloadProfiler(enabled=False)
+        self.work_index = work_index
 
         self.mkv_scan_queue: queue.PriorityQueue[
             tuple[int, int, _QueueEntry]
@@ -49,6 +52,7 @@ class MkvWorkflow:
     def start(self) -> None:
         if self._scan_thread:
             return
+        recovered = self._recover_pending_tasks()
         self._scan_thread = threading.Thread(
             target=self._scan_loop,
             name="mkv-scanner",
@@ -61,6 +65,8 @@ class MkvWorkflow:
             )
             worker.start()
             self._translation_threads.append(worker)
+        if recovered:
+            logger.info("recovered_pending_work items=%d", recovered)
 
     def stop(self) -> None:
         self.shutdown_event.set()
@@ -88,6 +94,17 @@ class MkvWorkflow:
             return
         if priority not in (0, 1):
             priority = 1
+        if self.work_index:
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                return
+            self.work_index.record_pending(
+                path,
+                mtime_ns=stat.st_mtime_ns,
+                size_bytes=stat.st_size,
+                priority=priority,
+            )
         key = str(path)
         with self._pending_lock:
             if key in self._pending_paths:
@@ -118,6 +135,34 @@ class MkvWorkflow:
         key = str(path)
         with self._priority_lock:
             self._priority_enqueue_times[key] = time.monotonic()
+
+    def queue_status(self) -> dict[str, int]:
+        priority_counts = {0: 0, 1: 0}
+        try:
+            with self.mkv_scan_queue.mutex:
+                for priority, _, _ in list(self.mkv_scan_queue.queue):
+                    if priority in priority_counts:
+                        priority_counts[priority] += 1
+        except Exception:  # pragma: no cover - best effort snapshot
+            pass
+        with self._pending_lock:
+            pending = len(self._pending_paths)
+            pending_rescans = len(self._pending_rescan_priorities)
+        return {
+            "queue_size": self.mkv_scan_queue.qsize(),
+            "priority_0": priority_counts[0],
+            "priority_1": priority_counts[1],
+            "pending_paths": pending,
+            "pending_rescans": pending_rescans,
+        }
+
+    def _recover_pending_tasks(self) -> int:
+        if not self.work_index:
+            return 0
+        recovered = self.work_index.recover_pending()
+        for path, priority in recovered:
+            self.enqueue_translation(path, priority=priority)
+        return len(recovered)
 
     def _record_priority_wait(self, path: Path) -> None:
         key = str(path)
@@ -173,11 +218,22 @@ class MkvWorkflow:
                 if not path.is_file():
                     continue
                 self._record_priority_wait(path)
+                if self.work_index:
+                    self.work_index.mark_in_progress(path)
+                result = None
                 with self.profiler.track("mkv.workflow.process_file"):
-                    self.scanner.process_file(
+                    result = self.scanner.process_file(
                         path,
                         position=entry.position,
                         total_paths=entry.total_paths,
+                    )
+                if self.work_index and result:
+                    self.work_index.mark_finished(
+                        path,
+                        mtime_ns=result.mtime_ns,
+                        size_bytes=result.size_bytes,
+                        pending=result.pending,
+                        missing=result.missing,
                     )
             except Exception as exc:
                 logger.error(
@@ -185,6 +241,14 @@ class MkvWorkflow:
                     path.name if path else "-",
                     exc,
                 )
+                if self.work_index:
+                    self.work_index.mark_finished(
+                        entry.path,
+                        mtime_ns=None,
+                        size_bytes=None,
+                        pending=True,
+                        missing=False,
+                    )
             finally:
                 self.mkv_scan_queue.task_done()
                 self._complete_pending(entry.path)

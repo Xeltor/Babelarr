@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Iterable
@@ -27,6 +28,15 @@ logger = logging.getLogger(__name__)
 RECENT_PRIORITY_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000
 
 
+@dataclass
+class ProcessResult:
+    translated: int
+    pending: bool
+    mtime_ns: int | None
+    size_bytes: int | None
+    missing: bool
+
+
 class MkvScanner:
     """Walk configured directories and translate missing subtitle languages."""
 
@@ -42,6 +52,7 @@ class MkvScanner:
         preferred_source: str | None = None,
         profiler: WorkloadProfiler | None = None,
         jellyfin_client: JellyfinClient | None = None,
+        work_index=None,
     ) -> None:
         self.directories = directories
         self.tagger = tagger
@@ -63,6 +74,7 @@ class MkvScanner:
             profiler=profiler,
         )
         self._jellyfin_client = jellyfin_client
+        self._work_index = work_index
 
     def _profile(self, name: str):
         if not self.profiler:
@@ -90,15 +102,23 @@ class MkvScanner:
         recent_paths: list[Path] = []
         with self._profile("mkv.scan.full"):
             for path in file_paths:
-                needs_translation, is_recent = self._evaluate_file(path, recent_threshold_ns)
+                (
+                    needs_translation,
+                    is_recent,
+                    mtime_ns,
+                    size_bytes,
+                ) = self._evaluate_file(path, recent_threshold_ns)
                 if not needs_translation:
                     continue
                 priority = 0 if is_recent else 1
+                self._record_pending_task(path, mtime_ns, size_bytes, priority)
                 tasks.append((path, priority))
                 if is_recent:
                     recent_paths.append(path)
         if seen and self.cache_enabled:
             self._probe_cache.prune_entries(seen)
+        if seen and self._work_index:
+            self._work_index.prune_missing(seen)
         return len(file_paths), tasks, recent_paths
 
     def scan_files(self, paths: Iterable[Path]) -> tuple[int, list[tuple[Path, int]]]:
@@ -116,10 +136,16 @@ class MkvScanner:
         tasks: list[tuple[Path, int]] = []
         with self._profile("mkv.scan.files"):
             for path in valid_paths:
-                needs_translation, is_recent = self._evaluate_file(path, recent_threshold_ns)
+                (
+                    needs_translation,
+                    is_recent,
+                    mtime_ns,
+                    size_bytes,
+                ) = self._evaluate_file(path, recent_threshold_ns)
                 if not needs_translation:
                     continue
                 priority = 0 if is_recent else 1
+                self._record_pending_task(path, mtime_ns, size_bytes, priority)
                 tasks.append((path, priority))
         return len(valid_paths), tasks
 
@@ -127,15 +153,19 @@ class MkvScanner:
         self,
         path: Path,
         recent_threshold_ns: int,
-    ) -> tuple[bool, bool]:
+    ) -> tuple[bool, bool, int | None, int | None]:
         try:
-            mtime_ns = path.stat().st_mtime_ns
+            stat = path.stat()
+            mtime_ns = stat.st_mtime_ns
+            size_bytes = stat.st_size
         except FileNotFoundError:
             self._probe_cache.invalidate_path(path)
-            return False, False
+            if self._work_index:
+                self._work_index.delete(path)
+            return False, False, None, None
         is_recent = mtime_ns >= recent_threshold_ns
         if self._sidecars_up_to_date(path, mtime_ns):
-            return False, is_recent
+            return False, is_recent, mtime_ns, size_bytes
         cached_mtime: int | None = None
         cached_langs: set[str] | None = None
         if self.cache_enabled:
@@ -145,21 +175,39 @@ class MkvScanner:
             and cached_mtime == mtime_ns
             and not self._has_pending_targets(path, mtime_ns, cached_langs)
         ):
-            return False, is_recent
+            return False, is_recent, mtime_ns, size_bytes
         try:
             streams = self._probe_cache.list_streams(path)
         except FileNotFoundError:
             self._probe_cache.invalidate_path(path)
-            return False, is_recent
+            if self._work_index:
+                self._work_index.delete(path)
+            return False, is_recent, None, None
         except MkvToolError as exc:
             logger.error("fail_stream_enum path=%s error=%s", path.name, exc)
-            return False, is_recent
+            return False, is_recent, mtime_ns, size_bytes
         self._ensure_tagged_streams(path, streams)
         language_candidates = self._map_streams_to_languages(path, streams)
         existing_langs = set(language_candidates.keys())
         if self._has_pending_targets(path, mtime_ns, existing_langs):
-            return True, is_recent
-        return False, is_recent
+            return True, is_recent, mtime_ns, size_bytes
+        return False, is_recent, mtime_ns, size_bytes
+
+    def _record_pending_task(
+        self,
+        path: Path,
+        mtime_ns: int | None,
+        size_bytes: int | None,
+        priority: int,
+    ) -> None:
+        if not self._work_index:
+            return
+        self._work_index.record_pending(
+            path,
+            mtime_ns=mtime_ns,
+            size_bytes=size_bytes,
+            priority=priority,
+        )
 
     def process_file(
         self,
@@ -167,7 +215,7 @@ class MkvScanner:
         *,
         position: int | None = None,
         total_paths: int | None = None,
-    ) -> int:
+    ) -> ProcessResult:
         start = time.monotonic()
         try:
             return self._process_file_impl(path, position=position, total_paths=total_paths)
@@ -180,14 +228,24 @@ class MkvScanner:
         path: Path,
         position: int | None,
         total_paths: int | None,
-    ) -> int:
+    ) -> ProcessResult:
         try:
-            mtime_ns = path.stat().st_mtime_ns
+            stat = path.stat()
+            mtime_ns = stat.st_mtime_ns
+            size_bytes = stat.st_size
         except FileNotFoundError:
             self._probe_cache.invalidate_path(path)
             if self.cache_enabled:
                 self._probe_cache.delete_entry(path)
-            return 0
+            if self._work_index:
+                self._work_index.delete(path)
+            return ProcessResult(
+                translated=0,
+                pending=False,
+                mtime_ns=None,
+                size_bytes=None,
+                missing=True,
+            )
         self._log_file_start(path, position=position, total_paths=total_paths)
         cache_state = "disabled"
         cached_langs: set[str] | None = None
@@ -202,6 +260,8 @@ class MkvScanner:
             if self.cache_enabled:
                 self._probe_cache.delete_entry(path)
             self._probe_cache.invalidate_path(path)
+            if self._work_index:
+                self._work_index.delete(path)
             self._log_file_finish(
                 path,
                 position=position,
@@ -211,7 +271,13 @@ class MkvScanner:
                 cache_state="missing",
                 reason="missing_pre_process",
             )
-            return 0
+            return ProcessResult(
+                translated=0,
+                pending=False,
+                mtime_ns=None,
+                size_bytes=None,
+                missing=True,
+            )
         except MkvToolError as exc:
             logger.error("fail_stream_enum path=%s error=%s", path.name, exc)
             self._log_file_finish(
@@ -223,7 +289,13 @@ class MkvScanner:
                 cache_state=cache_state,
                 reason="stream_enum_failed",
             )
-            return 0
+            return ProcessResult(
+                translated=0,
+                pending=True,
+                mtime_ns=mtime_ns,
+                size_bytes=size_bytes,
+                missing=False,
+            )
         self._ensure_tagged_streams(path, streams)
         language_candidates = self._map_streams_to_languages(path, streams)
         existing_langs = set(language_candidates.keys())
@@ -247,7 +319,13 @@ class MkvScanner:
                 cache_state=cache_state,
                 reason="sidecars_up_to_date",
             )
-            return 0
+            return ProcessResult(
+                translated=0,
+                pending=False,
+                mtime_ns=mtime_ns,
+                size_bytes=size_bytes,
+                missing=False,
+            )
         if (
             self.cache_enabled
             and cached == mtime_ns
@@ -262,16 +340,26 @@ class MkvScanner:
                 cache_state="cache_hit",
                 reason="cached",
             )
-            return 0
+            return ProcessResult(
+                translated=0,
+                pending=False,
+                mtime_ns=mtime_ns,
+                size_bytes=size_bytes,
+                missing=False,
+            )
         translated, translation_errors, no_source_targets = self._translate_missing(
             path, language_candidates, mtime_ns, existing_langs
         )
         try:
-            updated_mtime = path.stat().st_mtime_ns
+            updated_stat = path.stat()
+            updated_mtime = updated_stat.st_mtime_ns
+            updated_size = updated_stat.st_size
         except FileNotFoundError:
             self._probe_cache.invalidate_path(path)
             if self.cache_enabled:
                 self._probe_cache.delete_entry(path)
+            if self._work_index:
+                self._work_index.delete(path)
             self._log_file_finish(
                 path,
                 position=position,
@@ -281,7 +369,13 @@ class MkvScanner:
                 cache_state="missing",
                 reason="missing_post_process",
             )
-            return translated
+            return ProcessResult(
+                translated=translated,
+                pending=False,
+                mtime_ns=None,
+                size_bytes=None,
+                missing=True,
+            )
         if self.cache_enabled:
             if translation_errors:
                 cache_state = "cache_skipped"
@@ -312,7 +406,13 @@ class MkvScanner:
         )
         if translated:
             self._notify_jellyfin(path)
-        return translated
+        return ProcessResult(
+            translated=translated,
+            pending=translation_errors,
+            mtime_ns=updated_mtime,
+            size_bytes=updated_size,
+            missing=False,
+        )
 
     def _log_file_start(
         self,
