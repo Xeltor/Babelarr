@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from contextlib import nullcontext
@@ -492,6 +493,7 @@ class MkvScanner:
                         source_lang,
                         target_lang,
                         source_path=source_path,
+                        mkv_mtime_ns=mtime_ns,
                     )
                 except FileNotFoundError:
                     logger.info("mkv_missing_during_translation path=%s target=%s", path.name, target_lang)
@@ -671,6 +673,7 @@ class MkvScanner:
         target_lang: str,
         *,
         source_path: Path | None = None,
+        mkv_mtime_ns: int | None = None,
     ) -> bool:
         extractor = self.tagger.extractor
         subtitle_blob = self._subtitle_path(path, target_lang)
@@ -696,6 +699,17 @@ class MkvScanner:
                 except Exception:
                     existing = None
             if existing == translated:
+                if mkv_mtime_ns is not None:
+                    try:
+                        mtime_sec = mkv_mtime_ns / 1_000_000_000
+                        os.utime(subtitle_blob, (mtime_sec, mtime_sec))
+                    except Exception as exc:  # pragma: no cover - best effort
+                        logger.debug(
+                            "touch_subtitle_failed path=%s target=%s error=%s",
+                            path.name,
+                            target_lang,
+                            exc,
+                        )
                 logger.info(
                     "translation_skipped path=%s target=%s source=%s reason=unchanged",
                     path.name,

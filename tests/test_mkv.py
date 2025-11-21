@@ -1,4 +1,6 @@
 import json
+import os
+import time
 import uuid
 from pathlib import Path
 from typing import cast
@@ -663,6 +665,11 @@ def test_translate_stream_skips_when_content_matches(tmp_path: Path) -> None:
     source.write_text("content")
     subtitle = tmp_path / "movie.nl.srt"
     subtitle.write_bytes(b"hello\n")
+    older_ts = time.time() - 60
+    newer_ts = time.time()
+    os.utime(subtitle, (older_ts, older_ts))
+    os.utime(source, (newer_ts, newer_ts))
+    mkv_mtime_ns = source.stat().st_mtime_ns
     stream = SubtitleStream(
         ffprobe_index=0,
         subtitle_index=1,
@@ -673,7 +680,8 @@ def test_translate_stream_skips_when_content_matches(tmp_path: Path) -> None:
         default=False,
     )
 
-    updated = scanner._translate_stream(source, stream, "en", "nl")
+    updated = scanner._translate_stream(source, stream, "en", "nl", mkv_mtime_ns=mkv_mtime_ns)
 
     assert updated is False
     assert subtitle.read_bytes() == b"hello\n"
+    assert subtitle.stat().st_mtime_ns >= mkv_mtime_ns
