@@ -146,6 +146,9 @@ class MkvHandler(PatternMatchingEventHandler):
 
 
 def watch(app: Application) -> None:
+    if not getattr(app.config, "watch_enabled", True):
+        logger.info("skip_observer reason=disabled")
+        return
     observer = Observer()
     observer.name = "watchdog"
     handlers: list[MkvHandler] = []

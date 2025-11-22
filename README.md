@@ -63,10 +63,14 @@ docker run -d --name babelarr \
 | `WORKERS` | `1` | Number of translation worker threads (maximum 10). |
 | `LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS` | `10` | Maximum number of LibreTranslate requests (translations or detections) allowed simultaneously. |
 | `MKV_DIRS` | *(defaults to `WATCH_DIRS`)* | Colon-separated directories to scan for MKV files when tagging embedded subtitles. |
+| `WATCH_ENABLED` | `true` | Set to `false` to disable the filesystem observer and rely solely on scheduled scans. |
 | `MKV_SCAN_INTERVAL_MINUTES` | `180` | Minutes between MKV rescans. |
 | `MKV_MIN_CONFIDENCE` | `0.85` | Minimum LibreTranslate confidence required before applying a language tag. |
 | `MKV_CACHE_PATH` | `/config/cache.db` | Path for the combined cache (MKV metadata + probe results) that speeds up scans. |
 | `MKV_CACHE_ENABLED` | `true` | Disable to force reprocessing of MKVs without reading/writing the cache (useful for testing). |
+| `WEBHOOK_HOST` | `0.0.0.0` | Host/interface for the Tdarr webhook listener. Set to `127.0.0.1` to bind locally. |
+| `WEBHOOK_PORT` | `0` | Port for the Tdarr webhook listener. `0` disables the listener. |
+| `WEBHOOK_TOKEN` | *(unset)* | Optional bearer token required on incoming webhook requests. |
 
 If `ENSURE_LANGS` is empty or only contains invalid entries, the application raises a `ValueError` during startup; when `ENSURE_LANGS` is unset it defaults to `en,nl,bs`.
 
@@ -76,7 +80,7 @@ Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and
 
 Retry/backoff timing, debounce, stabilization, and HTTP timeout values are internal defaults tuned for typical workloads and are not configurable via environment variables.
 
-The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation. A daily cleanup job also removes orphaned sidecar subtitles whose MKV parents no longer exist, running asynchronously so the main loop stays responsive.
+The application scans MKV directories on startup, after file changes (when the watcher is enabled), and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation. A daily cleanup job also removes orphaned sidecar subtitles whose MKV parents no longer exist, running asynchronously so the main loop stays responsive.
 
 If LibreTranslate is unreachable at startup or during operation, Babelarr logs the outage and pauses worker threads until the service becomes available again.
 
@@ -107,6 +111,26 @@ services:
       WATCH_DIRS: "/data"
       ENSURE_LANGS: "en,nl,bs"
       LIBRETRANSLATE_URL: "http://libretranslate:5000"
+```
+
+### Tdarr webhook
+
+When `WEBHOOK_PORT` is set to a non-zero value, Babelarr exposes a small HTTP listener at `/webhook/tdarr` that lets Tdarr (or any other tool) enqueue MKVs for immediate processing. The webhook always queues work at the highest priority. An optional bearer token can be enforced via `WEBHOOK_TOKEN`.
+
+Example Tdarr callback:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer ${WEBHOOK_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"/data/show/episode.mkv"}' \
+  http://babelarr:8150/webhook/tdarr
+```
+
+Use the `paths` field to send multiple MKVs at once:
+
+```json
+{"paths": ["/data/show/episode1.mkv", "/data/show/episode2.mkv"]}
 ```
 
 ## Development

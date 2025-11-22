@@ -29,6 +29,7 @@ class Config:
         mkv_min_confidence: Minimum confidence required for tagging.
         mkv_cache_path: Path to persisted MKV processing state.
         mkv_dirs: Directories to scan/watch for MKV files.
+        watch_enabled: Toggle filesystem observer; disable to rely on scheduled scans only.
     """
 
     root_dirs: list[str]
@@ -55,9 +56,13 @@ class Config:
     mkv_dirs: list[str] | None = None
     mkv_cache_enabled: bool = True
     mkv_temp_dir: str = "/tmp/libretranslate-files-translate"
+    watch_enabled: bool = True
     profiling_enabled: bool = False
     profiling_ui_host: str = "0.0.0.0"
     profiling_ui_port: int = 0
+    webhook_host: str = "0.0.0.0"
+    webhook_port: int = 0
+    webhook_token: str | None = None
 
     @staticmethod
     def _parse_ensure_langs(raw: str | None, default: list[str]) -> list[str]:
@@ -237,11 +242,14 @@ class Config:
             "MKV_CACHE_ENABLED": lambda v: cls._parse_bool(
                 "MKV_CACHE_ENABLED", v, True
             ),
+            "WATCH_ENABLED": lambda v: cls._parse_bool("WATCH_ENABLED", v, True),
             "PROFILING_ENABLED": lambda v: cls._parse_bool(
                 "PROFILING_ENABLED", v, False
             ),
             "PROFILING_UI_HOST": lambda v: v or "0.0.0.0",
             "PROFILING_UI_PORT": lambda v: cls._parse_int("PROFILING_UI_PORT", v, 0),
+            "WEBHOOK_HOST": lambda v: v or "0.0.0.0",
+            "WEBHOOK_PORT": lambda v: cls._parse_int("WEBHOOK_PORT", v, 0),
         }
 
         parsed = {
@@ -267,9 +275,13 @@ class Config:
         mkv_scan_interval_minutes = parsed["MKV_SCAN_INTERVAL_MINUTES"]
         mkv_min_confidence = parsed["MKV_MIN_CONFIDENCE"]
         mkv_cache_enabled = parsed["MKV_CACHE_ENABLED"]
+        watch_enabled = parsed["WATCH_ENABLED"]
         profiling_enabled = parsed["PROFILING_ENABLED"]
         profiling_ui_host = parsed["PROFILING_UI_HOST"]
         profiling_ui_port = parsed["PROFILING_UI_PORT"]
+        webhook_host = parsed["WEBHOOK_HOST"]
+        webhook_port = parsed["WEBHOOK_PORT"]
+        webhook_token = os.environ.get("WEBHOOK_TOKEN") or None
 
         logger.info(
             "loaded config mkv_dirs=%s ensure_langs=%s api_url=%s "
@@ -279,7 +291,7 @@ class Config:
             "libretranslate_max_concurrent_requests=%s mkv_scan_interval_minutes=%s "
             "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s "
             "libretranslate_max_concurrent_detection_requests=%s mkv_temp_dir=%s profiling_enabled=%s "
-            "profiling_ui_host=%s profiling_ui_port=%s",
+            "profiling_ui_host=%s profiling_ui_port=%s watch_enabled=%s webhook_host=%s webhook_port=%s webhook_token_set=%s",
             mkv_dirs,
             ensure_langs,
             api_url,
@@ -306,6 +318,10 @@ class Config:
             profiling_enabled,
             profiling_ui_host,
             profiling_ui_port,
+            watch_enabled,
+            webhook_host,
+            webhook_port,
+            bool(webhook_token),
         )
 
         return cls(
@@ -333,7 +349,11 @@ class Config:
             mkv_dirs=mkv_dirs,
             mkv_cache_enabled=mkv_cache_enabled,
             mkv_temp_dir=mkv_temp_dir,
+            watch_enabled=watch_enabled,
             profiling_enabled=profiling_enabled,
             profiling_ui_host=profiling_ui_host,
             profiling_ui_port=profiling_ui_port,
+            webhook_host=webhook_host,
+            webhook_port=webhook_port,
+            webhook_token=webhook_token,
         )

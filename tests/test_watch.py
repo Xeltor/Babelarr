@@ -129,6 +129,50 @@ def test_watch_sets_up_observer(
     assert scheduled and scheduled[0][1] == str(mkv_dir)
 
 
+def test_watch_can_be_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    scheduled: list[tuple[object, str, bool]] = []
+
+    class FakeObserver:
+        def __init__(self) -> None:
+            self.name = None
+
+        def schedule(self, handler: object, path: str, recursive: bool) -> None:
+            scheduled.append((handler, path, recursive))
+
+        def start(self) -> None:
+            raise AssertionError("observer should not start")
+
+        def stop(self) -> None:
+            return None
+
+        def join(self) -> None:
+            return None
+
+    monkeypatch.setattr(watch_module, "Observer", FakeObserver)
+    mkv_dir = tmp_path / "watch"
+    mkv_dir.mkdir()
+    config = SimpleNamespace(
+        debounce=0.01,
+        stabilize_timeout=0.01,
+        mkv_dirs=[str(mkv_dir)],
+        watch_enabled=False,
+    )
+    app = SimpleNamespace(
+        config=config,
+        shutdown_event=threading.Event(),
+        handle_new_mkv=lambda path: None,
+        invalidate_mkv_cache_state=lambda path: None,
+    )
+
+    with caplog.at_level("INFO", logger="babelarr.watch"):
+        watch_module.watch(app)
+
+    assert not scheduled
+    assert "skip_observer reason=disabled" in caplog.text
+
+
 def test_watch_skips_ignored_and_missing_dirs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

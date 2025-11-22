@@ -50,6 +50,10 @@ def test_parse_detection_concurrency_invalid(caplog: LogCaptureFixture) -> None:
     assert Config._parse_detection_concurrency("detection", None, None) is None
 
 
+def test_parse_detection_concurrency_valid() -> None:
+    assert Config._parse_detection_concurrency("detection", "4", 3) == 4
+
+
 def test_parse_bool_handles_invalid(caplog: LogCaptureFixture) -> None:
     assert Config._parse_bool("flag", "true", False) is True
     assert Config._parse_bool("flag", "off", True) is False
@@ -114,6 +118,12 @@ def test_persistent_sessions_flag(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("PERSISTENT_SESSIONS", "true")
     cfg = Config.from_env()
     assert cfg.persistent_sessions is True
+
+
+def test_watch_flag(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("WATCH_ENABLED", "false")
+    cfg = Config.from_env()
+    assert cfg.watch_enabled is False
 
 
 def test_jellyfin_env_parsed(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
