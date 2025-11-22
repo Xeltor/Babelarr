@@ -71,8 +71,10 @@ class Application:
                 profiler=self.profiler,
             )
             self._work_index = MkvWorkIndex(self.config.mkv_cache_path)
-            preferred_source = "en" if "en" in self.config.ensure_langs else (
-                self.config.ensure_langs[0] if self.config.ensure_langs else None
+            preferred_source = (
+                "en"
+                if "en" in self.config.ensure_langs
+                else (self.config.ensure_langs[0] if self.config.ensure_langs else None)
             )
             self._mkv_scanner = MkvScanner(
                 directories=self.config.mkv_dirs,
@@ -156,6 +158,8 @@ class Application:
             self._sidecar_cleanup_thread.start()
 
     def _run_sidecar_cleanup(self) -> None:
+        if not self.sidecar_cleaner:
+            return
         try:
             self.sidecar_cleaner.remove_orphans()
         except Exception as exc:

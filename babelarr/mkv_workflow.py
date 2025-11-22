@@ -36,9 +36,9 @@ class MkvWorkflow:
         self.profiler = profiler or WorkloadProfiler(enabled=False)
         self.work_index = work_index
 
-        self.mkv_scan_queue: queue.PriorityQueue[
-            tuple[int, int, _QueueEntry]
-        ] = queue.PriorityQueue()
+        self.mkv_scan_queue: queue.PriorityQueue[tuple[int, int, _QueueEntry]] = (
+            queue.PriorityQueue()
+        )
         self._queue_counter = itertools.count()
         self._scan_event = threading.Event()
         self._scan_thread: threading.Thread | None = None
@@ -111,7 +111,11 @@ class MkvWorkflow:
                 previous = self._pending_rescan_priorities.get(key)
                 if previous is None or priority < previous:
                     self._pending_rescan_priorities[key] = priority
-                logger.debug("enqueue_skip path=%s priority=%d reason=pending", path.name, priority)
+                logger.debug(
+                    "enqueue_skip path=%s priority=%d reason=pending",
+                    path.name,
+                    priority,
+                )
                 return
             self._pending_paths.add(key)
             self._pending_rescan_priorities.pop(key, None)
@@ -122,7 +126,9 @@ class MkvWorkflow:
             if position is None or total_paths is None:
                 snapshot = self.mkv_scan_queue.qsize()
             entry_position = position if position is not None else (snapshot or 0) + 1
-            entry_total_paths = total_paths if total_paths is not None else (snapshot or 0) + 1
+            entry_total_paths = (
+                total_paths if total_paths is not None else (snapshot or 0) + 1
+            )
             entry = _QueueEntry(
                 path=path,
                 position=entry_position,
@@ -136,7 +142,7 @@ class MkvWorkflow:
         with self._priority_lock:
             self._priority_enqueue_times[key] = time.monotonic()
 
-    def queue_status(self) -> dict[str, int]:
+    def queue_status(self) -> dict[str, object]:
         priority_counts = {0: 0, 1: 0}
         try:
             with self.mkv_scan_queue.mutex:
@@ -260,5 +266,7 @@ class MkvWorkflow:
             self._pending_paths.discard(key)
             rescan = self._pending_rescan_priorities.pop(key, None)
         if rescan is not None:
-            logger.debug("reschedule_translation path=%s priority=%d", path.name, rescan)
+            logger.debug(
+                "reschedule_translation path=%s priority=%d", path.name, rescan
+            )
             self.enqueue_translation(path, priority=rescan)

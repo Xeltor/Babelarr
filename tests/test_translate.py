@@ -1,16 +1,15 @@
 import logging
 
 import pytest
+import requests
+
+import babelarr.translator as translator
+from babelarr.translator import LibreTranslateClient
 
 pytest.skip(
     "Queue-based translation tests are obsolete under the MKV-first pipeline",
     allow_module_level=True,
 )
-
-import requests
-
-import babelarr.translator as translator
-from babelarr.translator import LibreTranslateClient
 
 
 class DummyTranslator:

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Iterable
 
 from .profiling import WorkloadProfiler
 
@@ -73,7 +73,7 @@ class ProfilingHandler(BaseHTTPRequestHandler):
                 f"<td>{metric['p95']:.3f}</td>"
                 f"<td>{metric['p99']:.3f}</td>"
                 "</tr>"
-        )
+            )
         table = (
             "<table>"
             "<thead><tr>"
@@ -158,7 +158,9 @@ class ProfilingDashboard:
         self._server = server
         self._thread = threading.Thread(target=server.serve_forever, daemon=True)
         self._thread.start()
-        logger.info("profiling_ui_started host=%s port=%s", self.host, server.server_port)
+        logger.info(
+            "profiling_ui_started host=%s port=%s", self.host, server.server_port
+        )
 
     def stop(self) -> None:
         if not self._server:
@@ -167,7 +169,9 @@ class ProfilingDashboard:
         self._server.server_close()
         if self._thread:
             self._thread.join(timeout=3)
-        logger.info("profiling_ui_stopped host=%s port=%s", self.host, self._server.server_port)
+        logger.info(
+            "profiling_ui_stopped host=%s port=%s", self.host, self._server.server_port
+        )
         self._server = None
         self._thread = None
 

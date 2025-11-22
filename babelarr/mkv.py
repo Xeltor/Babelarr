@@ -7,9 +7,9 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-from functools import lru_cache
 from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import pysubs2
@@ -40,6 +40,7 @@ def is_text_subtitle_codec(codec: str | None) -> bool:
         return True
     return codec.lower() in TEXT_SUBTITLE_CODECS
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +69,7 @@ class SubtitleStream:
 
         return f"track:s{self.subtitle_index}"
 
-    def to_cache_dict(self) -> dict[str, str | int | float | bool | None]:
+    def to_cache_dict(self) -> dict[str, object]:
         return {
             "ffprobe_index": self.ffprobe_index,
             "subtitle_index": self.subtitle_index,
@@ -81,7 +82,7 @@ class SubtitleStream:
         }
 
     @classmethod
-    def from_cache_dict(cls, data: dict[str, object | str | int | float | None]) -> "SubtitleStream":
+    def from_cache_dict(cls, data: dict[str, object]) -> SubtitleStream:
         duration_value = data.get("duration")
         duration = None
         if isinstance(duration_value, (int, float)):
@@ -91,12 +92,33 @@ class SubtitleStream:
                 duration = float(duration_value)
             except ValueError:
                 pass
+
+        def _coerce_int(value: object) -> int:
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, (int, float)):
+                return int(value)
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    return 0
+            return 0
+
+        ffprobe_index = _coerce_int(data.get("ffprobe_index"))
+        subtitle_index = _coerce_int(data.get("subtitle_index"))
+        codec_value = data.get("codec")
+        codec = codec_value if isinstance(codec_value, str) else None
+        language_value = data.get("language")
+        language = language_value if isinstance(language_value, str) else None
+        title_value = data.get("title")
+        title = title_value if isinstance(title_value, str) else None
         return cls(
-            ffprobe_index=int(data.get("ffprobe_index", 0)),
-            subtitle_index=int(data.get("subtitle_index", 0)),
-            codec=data.get("codec") if isinstance(data.get("codec"), str) else None,
-            language=data.get("language") if isinstance(data.get("language"), str) else None,
-            title=data.get("title") if isinstance(data.get("title"), str) else None,
+            ffprobe_index=ffprobe_index,
+            subtitle_index=subtitle_index,
+            codec=codec,
+            language=language,
+            title=title,
             forced=bool(data.get("forced")),
             default=bool(data.get("default")),
             duration=duration,
@@ -156,7 +178,9 @@ class MkvSubtitleExtractor:
                     capture_output=True,
                     text=True,
                 )
-            except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
+            except (
+                subprocess.CalledProcessError
+            ) as exc:  # pragma: no cover - passthrough
                 raise MkvToolError(f"ffprobe failed for {path}") from exc
 
         payload = json.loads(result.stdout or "{}")
@@ -224,11 +248,7 @@ class MkvSubtitleExtractor:
         try:
             self._prepare_subtitle_file(path, stream, temp_path)
             data = temp_path.read_bytes()
-            sample = (
-                data
-                if self.sample_bytes <= 0
-                else data[: self.sample_bytes]
-            )
+            sample = data if self.sample_bytes <= 0 else data[: self.sample_bytes]
             stats = self._compute_sample_stats(data)
             stream.char_count = stats["char_count"]
             stream.cue_count = stats["cue_count"]
@@ -307,9 +327,7 @@ class MkvSubtitleExtractor:
             subs = pysubs2.load(str(src))
             subs.save(str(dest), format_="srt", encoding="utf-8")
         except Exception as exc:
-            raise MkvToolError(
-                f"pysubs2 failed converting {src}: {exc}"
-            ) from exc
+            raise MkvToolError(f"pysubs2 failed converting {src}: {exc}") from exc
 
     def _extract_with_ffmpeg(
         self,
@@ -351,7 +369,9 @@ class MkvSubtitleExtractor:
                     check=True,
                     capture_output=True,
                 )
-            except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
+            except (
+                subprocess.CalledProcessError
+            ) as exc:  # pragma: no cover - passthrough
                 stderr = (exc.stderr or b"").decode("utf-8", errors="ignore").strip()
                 raise MkvToolError(
                     f"ffmpeg failed for {path} track={stream.track_selector} stderr={stderr}"
@@ -374,7 +394,9 @@ class MkvSubtitleExtractor:
                     chars += len(line.strip())
         return {"cue_count": cues, "char_count": chars}
 
-    def extract_stream(self, path: Path, stream: SubtitleStream, output_path: Path) -> None:
+    def extract_stream(
+        self, path: Path, stream: SubtitleStream, output_path: Path
+    ) -> None:
         """Extract the subtitle stream into a file."""
 
         codec = (stream.codec or "").lower()
@@ -387,7 +409,9 @@ class MkvSubtitleExtractor:
             )
         self._prepare_subtitle_file(path, stream, output_path)
 
-    def _ensure_output_file(self, output_path: Path, result: subprocess.CompletedProcess) -> None:
+    def _ensure_output_file(
+        self, output_path: Path, result: subprocess.CompletedProcess
+    ) -> None:
         if output_path.exists():
             return
         data = getattr(result, "stdout", None)
@@ -641,7 +665,9 @@ class MkvSubtitleTagger:
         codec = (stream.codec or "").lower()
         return is_text_subtitle_codec(codec)
 
-    def detect_stream_language(self, path: Path, stream: SubtitleStream) -> DetectionResult | None:
+    def detect_stream_language(
+        self, path: Path, stream: SubtitleStream
+    ) -> DetectionResult | None:
         """Return the detected language for *stream* or ``None``."""
 
         if not self._is_supported_codec(stream):
@@ -671,10 +697,14 @@ class MkvSubtitleTagger:
         with self._profile("mkv.mkvpropedit"):
             try:
                 subprocess.run(cmd, check=True, capture_output=True)
-            except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
+            except (
+                subprocess.CalledProcessError
+            ) as exc:  # pragma: no cover - passthrough
                 raise MkvToolError(f"mkvpropedit failed for {path}") from exc
 
-    def detect_and_tag(self, path: Path, stream: SubtitleStream) -> DetectionResult | None:
+    def detect_and_tag(
+        self, path: Path, stream: SubtitleStream
+    ) -> DetectionResult | None:
         """Detect language and apply track tag when necessary."""
 
         detection = self.detect_stream_language(path, stream)
@@ -682,9 +712,7 @@ class MkvSubtitleTagger:
         hint_code = language_hint_from_title(stream.title)
         if hint_code:
             hint_code = normalize_language_code(hint_code)
-        iso_code = (
-            normalize_language_code(detection.language) if detection else None
-        )
+        iso_code = normalize_language_code(detection.language) if detection else None
 
         if detection and not iso_code:
             logger.info(
@@ -740,38 +768,28 @@ class MkvSubtitleTagger:
     def ensure_longest_default(
         self, path: Path, streams: list[tuple[SubtitleStream, str | None]]
     ) -> None:
-        groups: dict[
-            str, list[tuple[SubtitleStream, SubtitleMetrics, bool]]
-        ] = {}
+        groups: dict[str, list[tuple[SubtitleStream, SubtitleMetrics, bool]]] = {}
         for stream, lang in streams:
             if not lang:
                 continue
             metrics = SubtitleMetrics.from_stream(stream)
             hearing_impaired = title_indicates_hearing_impaired(stream.title)
-            groups.setdefault(lang, []).append(
-                (stream, metrics, hearing_impaired)
-            )
+            groups.setdefault(lang, []).append((stream, metrics, hearing_impaired))
         for lang, items in groups.items():
             if not items:
                 continue
             is_english = lang == "eng"
             best_stream = None
             if is_english:
-                non_hearing_impaired = [
-                    entry for entry in items if not entry[2]
-                ]
-                best_entry = max(
-                    non_hearing_impaired,
-                    key=lambda entry: entry[1].score(),
-                    default=None,
-                )
-                if best_entry is None:
+                best_entry: tuple[SubtitleStream, SubtitleMetrics, bool] | None = None
+                non_hearing_impaired = [entry for entry in items if not entry[2]]
+                if non_hearing_impaired:
                     best_entry = max(
-                        items,
-                        key=lambda entry: entry[1].score(),
-                        default=None,
+                        non_hearing_impaired, key=lambda entry: entry[1].score()
                     )
-                if best_entry:
+                if best_entry is None and items:
+                    best_entry = max(items, key=lambda entry: entry[1].score())
+                if best_entry is not None:
                     best_stream = best_entry[0]
             for stream, metrics, _ in items:
                 desired = 1 if (is_english and stream is best_stream) else 0
@@ -803,7 +821,9 @@ class MkvSubtitleTagger:
         with self._profile("mkv.mkvpropedit"):
             try:
                 subprocess.run(cmd, check=True, capture_output=True)
-            except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
+            except (
+                subprocess.CalledProcessError
+            ) as exc:  # pragma: no cover - passthrough
                 raise MkvToolError(f"mkvpropedit failed for {path}") from exc
 
     def _set_forced_flag(self, path: Path, stream: SubtitleStream, value: int) -> None:
@@ -820,6 +840,8 @@ class MkvSubtitleTagger:
                 subprocess.run(cmd, check=True, capture_output=True)
             except subprocess.CalledProcessError as exc:  # pragma: no cover
                 raise MkvToolError(f"mkvpropedit failed for {path}") from exc
+
+
 @dataclass
 class SubtitleMetrics:
     char_count: int
@@ -828,17 +850,13 @@ class SubtitleMetrics:
     forced: bool
 
     def score(self) -> float:
-        score = (
-            self.char_count
-            + self.cue_count * 5.0
-            + (self.duration or 0.0) * 0.1
-        )
+        score = self.char_count + self.cue_count * 5.0 + (self.duration or 0.0) * 0.1
         if self.forced:
             score *= 0.2
         return score
 
     @classmethod
-    def from_stream(cls, stream: SubtitleStream) -> "SubtitleMetrics":
+    def from_stream(cls, stream: SubtitleStream) -> SubtitleMetrics:
         return cls(
             char_count=stream.char_count,
             cue_count=stream.cue_count,

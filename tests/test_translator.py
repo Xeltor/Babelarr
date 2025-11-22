@@ -252,9 +252,7 @@ def test_detect_language_requires_threshold(monkeypatch):
     def fake_detect(sample):
         resp = requests.Response()
         resp.status_code = 200
-        resp._content = json.dumps(
-            [{"language": "es", "confidence": 0.2}]
-        ).encode()
+        resp._content = json.dumps([{"language": "es", "confidence": 0.2}]).encode()
         return resp
 
     monkeypatch.setattr(client.api, "detect", fake_detect)

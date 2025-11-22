@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from babelarr.mkv import SubtitleStream, SubtitleMetrics
+from babelarr.mkv import SubtitleMetrics, SubtitleStream
 from babelarr.mkv_scan import MkvScanner
 
 
@@ -79,7 +79,7 @@ def test_notifies_jellyfin_after_translation(tmp_path: Path) -> None:
 
     result = scanner.process_file(source)
 
-    assert result == 1
+    assert result.translated == 1
     assert jellyfin.paths == [source]
 
 
@@ -110,5 +110,5 @@ def test_does_not_notify_when_no_changes(tmp_path: Path) -> None:
 
     result = scanner.process_file(source)
 
-    assert result == 0
+    assert result.translated == 0
     assert jellyfin.paths == []

@@ -194,10 +194,14 @@ class Config:
                 mkv_cache_path.parent,
                 exc,
             )
-        mkv_dirs_raw = os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS", "/data")
+        mkv_dirs_raw = (
+            os.environ.get("MKV_DIRS") or os.environ.get("WATCH_DIRS") or "/data"
+        )
         mkv_dirs = [p for p in mkv_dirs_raw.split(":") if p]
         root_dirs = list(mkv_dirs)
-        mkv_temp_dir = os.environ.get("MKV_TEMP_DIR", "/tmp/libretranslate-files-translate")
+        mkv_temp_dir = os.environ.get(
+            "MKV_TEMP_DIR", "/tmp/libretranslate-files-translate"
+        )
         try:
             Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -237,9 +241,7 @@ class Config:
                 "PROFILING_ENABLED", v, False
             ),
             "PROFILING_UI_HOST": lambda v: v or "0.0.0.0",
-            "PROFILING_UI_PORT": lambda v: cls._parse_int(
-                "PROFILING_UI_PORT", v, 0
-            ),
+            "PROFILING_UI_PORT": lambda v: cls._parse_int("PROFILING_UI_PORT", v, 0),
         }
 
         parsed = {

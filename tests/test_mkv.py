@@ -11,8 +11,8 @@ from babelarr.mkv import (
     DetectionResult,
     MkvSubtitleExtractor,
     MkvSubtitleTagger,
-    SubtitleStream,
     SubtitleMetrics,
+    SubtitleStream,
     normalize_language_code,
 )
 from babelarr.mkv_scan import MkvScanner
@@ -211,7 +211,10 @@ def test_detect_and_tag_skips_existing_language(monkeypatch):
         def detect_language(self, sample, *, min_confidence=0.0):
             return DetectionResult("en", 0.95)
 
-    monkeypatch.setattr("subprocess.run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("should not run")))
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
 
     tagger = MkvSubtitleTagger(
         extractor=cast(MkvSubtitleExtractor, FakeExtractor()),
@@ -256,9 +259,7 @@ def test_pick_source_stream_uses_other_languages():
         forced=False,
         default=False,
     )
-    candidates = {
-        "spa": (stream, SubtitleMetrics.from_stream(stream), False)
-    }
+    candidates = {"spa": (stream, SubtitleMetrics.from_stream(stream), False)}
     source, selected = scanner._pick_source_stream(Path("movie.mkv"), candidates, "eng")
     assert source == "spa"
     assert selected is stream
@@ -434,6 +435,8 @@ def test_detect_and_tag_skips_unsupported_codec():
     )
     detection = tagger.detect_and_tag(Path("movie.mkv"), stream)
     assert detection is None
+
+
 def test_ensure_longest_default_sets_flag(monkeypatch):
     calls = []
 
@@ -622,7 +625,9 @@ class _TranslationDummyProbeCache:
         pass
 
 
-def _build_translation_scanner(tmp_path: Path, translator: _TranslationDummyTranslator) -> MkvScanner:
+def _build_translation_scanner(
+    tmp_path: Path, translator: _TranslationDummyTranslator
+) -> MkvScanner:
     extractor = _TranslationDummyExtractor(tmp_path)
 
     DummyTagger = type("DummyTagger", (), {"extractor": extractor})
@@ -680,7 +685,9 @@ def test_translate_stream_skips_when_content_matches(tmp_path: Path) -> None:
         default=False,
     )
 
-    updated = scanner._translate_stream(source, stream, "en", "nl", mkv_mtime_ns=mkv_mtime_ns)
+    updated = scanner._translate_stream(
+        source, stream, "en", "nl", mkv_mtime_ns=mkv_mtime_ns
+    )
 
     assert updated is False
     assert subtitle.read_bytes() == b"hello\n"

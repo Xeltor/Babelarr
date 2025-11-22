@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from babelarr.sidecar_cleanup import SidecarCleaner
 
 

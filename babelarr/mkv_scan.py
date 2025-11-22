@@ -3,27 +3,27 @@ from __future__ import annotations
 import logging
 import os
 import time
-from dataclasses import dataclass
+from collections.abc import Iterable
 from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
+from .ignore import is_path_ignored
 from .jellyfin_api import JellyfinClient
 from .mkv import (
     MkvSubtitleTagger,
     MkvToolError,
     SubtitleMetrics,
     SubtitleStream,
+    is_text_subtitle_codec,
     language_hint_from_title,
     normalize_language_code,
     normalize_language_code_iso1,
     title_indicates_hearing_impaired,
-    is_text_subtitle_codec,
 )
 from .mkv_probe_cache import MkvProbeCache
 from .profiling import WorkloadProfiler
-from .translator import LibreTranslateClient
-from .ignore import is_path_ignored
+from .translator import Translator
 
 logger = logging.getLogger(__name__)
 RECENT_PRIORITY_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000
@@ -45,7 +45,7 @@ class MkvScanner:
         self,
         directories: list[str],
         tagger: MkvSubtitleTagger,
-        translator: LibreTranslateClient,
+        translator: Translator,
         *,
         ensure_langs: list[str],
         probe_cache: MkvProbeCache | None = None,
@@ -61,9 +61,7 @@ class MkvScanner:
         self.ensure_langs = [
             language_iso1
             for lang in ensure_langs
-            if (
-                language_iso1 := normalize_language_code_iso1(lang)
-            )
+            if (language_iso1 := normalize_language_code_iso1(lang))
         ]
         self.cache_enabled = cache_enabled
         self.preferred_source = (
@@ -219,7 +217,9 @@ class MkvScanner:
     ) -> ProcessResult:
         start = time.monotonic()
         try:
-            return self._process_file_impl(path, position=position, total_paths=total_paths)
+            return self._process_file_impl(
+                path, position=position, total_paths=total_paths
+            )
         finally:
             if self.profiler:
                 self.profiler.record("mkv.scan.file", time.monotonic() - start)
@@ -389,7 +389,9 @@ class MkvScanner:
                     updated_mtime,
                     languages=cache_languages,
                 )
-                cache_state = "cache_no_source" if no_source_targets else "cache_updated"
+                cache_state = (
+                    "cache_no_source" if no_source_targets else "cache_updated"
+                )
         if translation_errors:
             finish_reason = "translation_errors"
         elif no_source_targets:
@@ -454,7 +456,7 @@ class MkvScanner:
     def _translate_missing(
         self,
         path: Path,
-        candidates: dict[str, tuple[SubtitleStream, SubtitleMetrics]],
+        candidates: dict[str, tuple[SubtitleStream, SubtitleMetrics, bool]],
         mtime_ns: int,
         existing_langs: set[str] | None,
     ) -> tuple[int, bool, bool]:
@@ -466,10 +468,14 @@ class MkvScanner:
         extracted_streams: dict[str, Path] = {}
         try:
             for target_lang in self.ensure_langs:
-                if not self._needs_translation(path, target_lang, mtime_ns, existing_langs):
+                if not self._needs_translation(
+                    path, target_lang, mtime_ns, existing_langs
+                ):
                     continue
                 had_pending_translation = True
-                source_lang, stream = self._pick_source_stream(path, candidates, target_lang)
+                source_lang, stream = self._pick_source_stream(
+                    path, candidates, target_lang
+                )
                 if not source_lang or not stream:
                     logger.warning(
                         "skip_translation path=%s target=%s reason=no_source",
@@ -496,7 +502,11 @@ class MkvScanner:
                         mkv_mtime_ns=mtime_ns,
                     )
                 except FileNotFoundError:
-                    logger.info("mkv_missing_during_translation path=%s target=%s", path.name, target_lang)
+                    logger.info(
+                        "mkv_missing_during_translation path=%s target=%s",
+                        path.name,
+                        target_lang,
+                    )
                     if self.cache_enabled:
                         self._probe_cache.delete_entry(path)
                     self._probe_cache.invalidate_path(path)
@@ -585,9 +595,7 @@ class MkvScanner:
     def _map_streams_to_languages(
         self, path: Path, streams: list[SubtitleStream]
     ) -> dict[str, tuple[SubtitleStream, SubtitleMetrics, bool]]:
-        candidates: dict[
-            str, tuple[SubtitleStream, SubtitleMetrics, bool]
-        ] = {}
+        candidates: dict[str, tuple[SubtitleStream, SubtitleMetrics, bool]] = {}
         for stream in streams:
             codec = (stream.codec or "").lower()
             if not is_text_subtitle_codec(codec):
@@ -600,7 +608,9 @@ class MkvScanner:
             specialized = self._is_specialized_stream(stream)
             previous = candidates.get(lang)
             if previous:
-                previous_score = self._score_with_specialization(previous[1], previous[2])
+                previous_score = self._score_with_specialization(
+                    previous[1], previous[2]
+                )
                 candidate_score = self._score_with_specialization(metrics, specialized)
                 if previous_score >= candidate_score:
                     continue
@@ -655,7 +665,10 @@ class MkvScanner:
         for lang in order:
             if not self.translator.supports_translation(lang, target):
                 continue
-            if lang not in self.ensure_langs and lang not in {"en", self.preferred_source}:
+            if lang not in self.ensure_langs and lang not in {
+                "en",
+                self.preferred_source,
+            }:
                 logger.info(
                     "using_fallback_source path=%s target=%s source=%s",
                     path.name,
@@ -749,7 +762,9 @@ class MkvScanner:
         ]
         if not filtered:
             return subtitle_bytes
-        return ("\n".join(filtered) + ("\n" if text.endswith("\n") else "")).encode("utf-8")
+        return ("\n".join(filtered) + ("\n" if text.endswith("\n") else "")).encode(
+            "utf-8"
+        )
 
     def _subtitle_path(self, path: Path, lang: str) -> Path:
         return path.with_suffix(f".{lang}.srt")

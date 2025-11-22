@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
 import json
 import logging
 import sqlite3
 import threading
 from collections import OrderedDict
+from collections.abc import Iterable
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Iterable
 
 from .mkv import MkvSubtitleExtractor, SubtitleStream
 from .profiling import WorkloadProfiler
-
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,9 @@ class MkvProbeCache:
     ) -> None:
         self.extractor = extractor
         self._lock = threading.Lock()
-        self._entries: OrderedDict[str, tuple[int, list[dict[str, object]]]] = OrderedDict()
+        self._entries: OrderedDict[str, tuple[int, list[dict[str, object]]]] = (
+            OrderedDict()
+        )
         self._max_entries = max_entries
         self._conn: sqlite3.Connection | None = None
         self._db_path = Path(db_path) if db_path else None
@@ -60,7 +61,9 @@ class MkvProbeCache:
             else:
                 try:
                     self._conn = sqlite3.connect(
-                        str(self._db_path), check_same_thread=False, isolation_level=None
+                        str(self._db_path),
+                        check_same_thread=False,
+                        isolation_level=None,
                     )
                     self._conn.execute(
                         "CREATE TABLE IF NOT EXISTS probe_cache "
@@ -127,9 +130,7 @@ class MkvProbeCache:
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
 
-    def _load_from_db(
-        self, key: str, mtime_ns: int
-    ) -> list[dict[str, object]] | None:
+    def _load_from_db(self, key: str, mtime_ns: int) -> list[dict[str, object]] | None:
         if not self._conn:
             return None
         with self._profile("mkv.cache.db.probe_load"):
@@ -220,7 +221,8 @@ class MkvProbeCache:
         with self._profile("mkv.cache.db.cache_load"):
             with self._lock:
                 cursor = self._conn.execute(
-                    "SELECT mtime_ns, languages FROM cache_entries WHERE path = ?", (key,)
+                    "SELECT mtime_ns, languages FROM cache_entries WHERE path = ?",
+                    (key,),
                 )
                 row = cursor.fetchone()
         if not row:
@@ -274,7 +276,9 @@ class MkvProbeCache:
                 params: tuple[str, ...] = ()
             else:
                 placeholders = ",".join("?" for _ in valid_tuple)
-                delete_sql = f"DELETE FROM cache_entries WHERE path NOT IN ({placeholders})"
+                delete_sql = (
+                    f"DELETE FROM cache_entries WHERE path NOT IN ({placeholders})"
+                )
                 params = valid_tuple
             with self._lock:
                 cursor = self._conn.execute(delete_sql, params)
@@ -300,7 +304,9 @@ class MkvProbeCache:
                 continue
             summary["count"] += int(stat.get("count", 0))
             summary["total"] += float(stat.get("total", 0.0))
-        summary["average"] = summary["total"] / summary["count"] if summary["count"] else 0.0
+        summary["average"] = (
+            summary["total"] / summary["count"] if summary["count"] else 0.0
+        )
         return summary
 
     def db_info(self) -> dict[str, object]:

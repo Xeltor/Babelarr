@@ -45,9 +45,9 @@ repos:
   # Optional: run quick tests before pushing
   - repo: local
     hooks:
-      - id: pytest
-        name: pytest (quick)
-        entry: bash -c 'pytest -q'
+      - id: make-check
+        name: make check (lint + tests)
+        entry: bash -c 'make check'
         language: system
         pass_filenames: false
-        stages: [push]
+        stages: [pre-push]

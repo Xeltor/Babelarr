@@ -101,9 +101,7 @@ class LibreTranslateAPI:
         if self.persistent_session:
             return self.session.post(url, data=data, timeout=self.http_timeout)
         headers = {"Connection": "close"}
-        return requests.post(
-            url, data=data, timeout=self.http_timeout, headers=headers
-        )
+        return requests.post(url, data=data, timeout=self.http_timeout, headers=headers)
 
     def close(self) -> None:
         """Close the thread-local session for this thread."""

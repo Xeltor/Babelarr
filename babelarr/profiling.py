@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import logging
 import math
 import threading
 import time
 from collections import deque
+from collections.abc import Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,9 @@ class WorkloadProfiler:
         if not values:
             return 0.0
         values.sort()
-        k = max(0, min(len(values) - 1, math.ceil((percentile / 100) * len(values)) - 1))
+        k = max(
+            0, min(len(values) - 1, math.ceil((percentile / 100) * len(values)) - 1)
+        )
         return values[k]
 
     def metrics(self) -> dict[str, dict[str, float]]:

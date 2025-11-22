@@ -47,9 +47,7 @@ def validate_environment(config: Config) -> None:
         valid_dirs.append(d)
 
     if not valid_dirs:
-        logger.error(
-            "no_readable_mkv_dirs dirs=%s", [Path(d).name for d in mkv_dirs]
-        )
+        logger.error("no_readable_mkv_dirs dirs=%s", [Path(d).name for d in mkv_dirs])
         raise SystemExit("No valid MKV directories configured")
 
     config.mkv_dirs = valid_dirs

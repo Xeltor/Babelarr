@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,9 @@ class MkvWorkIndex:
                 ).fetchone()
                 if row:
                     stored_mtime, stored_size, status, stored_priority = row
-                    current_priority = min(stored_priority or normalized_priority, normalized_priority)
+                    current_priority = min(
+                        stored_priority or normalized_priority, normalized_priority
+                    )
                     if (
                         stored_mtime == mtime_ns
                         and stored_size == size_bytes
@@ -128,7 +130,9 @@ class MkvWorkIndex:
                     "UPDATE mkv_work SET status='in_progress' WHERE path = ?", (key,)
                 )
             except sqlite3.DatabaseError as exc:
-                logger.warning("work_index_mark_in_progress_failed path=%s error=%s", path, exc)
+                logger.warning(
+                    "work_index_mark_in_progress_failed path=%s error=%s", path, exc
+                )
 
     def mark_finished(
         self,
@@ -149,7 +153,10 @@ class MkvWorkIndex:
             try:
                 if pending:
                     if mtime_ns is None or size_bytes is None:
-                        self._conn.execute("UPDATE mkv_work SET status='pending' WHERE path = ?", (key,))
+                        self._conn.execute(
+                            "UPDATE mkv_work SET status='pending' WHERE path = ?",
+                            (key,),
+                        )
                     else:
                         self._conn.execute(
                             "UPDATE mkv_work SET mtime_ns=?, size_bytes=?, status='pending' WHERE path=?",
@@ -158,7 +165,9 @@ class MkvWorkIndex:
                 else:
                     self._conn.execute("DELETE FROM mkv_work WHERE path = ?", (key,))
             except sqlite3.DatabaseError as exc:
-                logger.warning("work_index_mark_finished_failed path=%s error=%s", path, exc)
+                logger.warning(
+                    "work_index_mark_finished_failed path=%s error=%s", path, exc
+                )
 
     def prune_missing(self, valid_paths: Iterable[str]) -> None:
         if not self._conn:

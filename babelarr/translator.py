@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol, TypeVar
 
 import requests
 
@@ -16,6 +17,7 @@ from .libretranslate_api import LibreTranslateAPI
 from .profiling import WorkloadProfiler
 
 logger = logging.getLogger(__name__)
+TResponse = TypeVar("TResponse")
 
 ERROR_MESSAGES = {
     400: "Bad Request",
@@ -41,6 +43,12 @@ class Translator(Protocol):
     def wait_until_available(self) -> None:  # pragma: no cover - optional
         """Block until the translation service becomes available."""
 
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        """Return True when *src_lang* can be translated to *target_lang*."""
+
+    def is_target_supported(self, target_lang: str) -> bool:
+        """Return True if *target_lang* is supported by the service."""
+
 
 @dataclass(frozen=True)
 class DetectionResult:
@@ -50,6 +58,9 @@ class DetectionResult:
 
 class LibreTranslateClient:
     """Translator implementation using the LibreTranslate API."""
+
+    _post_concurrency: threading.Semaphore | None
+    _detection_concurrency: threading.Semaphore | None
 
     def __init__(
         self,
@@ -139,9 +150,16 @@ class LibreTranslateClient:
         resp = self._call_api_until_success(
             lambda api: api.fetch_languages(), "LibreTranslate fetch_languages"
         )
-        fetched = resp.json() if isinstance(resp, requests.Response) else resp
+        if isinstance(resp, requests.Response):
+            fetched = resp.json()
+        else:
+            fetched = resp
+        if not isinstance(fetched, list):
+            raise ValueError("Invalid languages payload")
         normalized: dict[str, set[str]] = {}
         for entry in fetched:
+            if not isinstance(entry, dict):
+                continue
             code = str(entry.get("code", "")).strip().lower()
             if not code:
                 continue
@@ -192,9 +210,9 @@ class LibreTranslateClient:
 
     def _call_api_until_success(
         self,
-        func: Callable[[LibreTranslateAPI], requests.Response],
+        func: Callable[[LibreTranslateAPI], TResponse],
         context: str,
-    ) -> requests.Response:
+    ) -> TResponse:
         """Invoke *func* against the configured API and return the response."""
         try:
             resp = func(self.api)
@@ -256,7 +274,9 @@ class LibreTranslateClient:
         self._handle_error_response(download, "LibreTranslate download")
         return download.content
 
-    def _request_translation(self, path: Path, src_lang: str, target_lang: str) -> bytes:
+    def _request_translation(
+        self, path: Path, src_lang: str, target_lang: str
+    ) -> bytes:
         """Send translation request and handle optional download flow."""
         resp = self._call_api_until_success(
             lambda api: api.translate_file(path, src_lang, target_lang, self.api_key),
@@ -285,7 +305,9 @@ class LibreTranslateClient:
         ``min_confidence``.
         """
 
-        sample = text.decode("utf-8", errors="ignore") if isinstance(text, bytes) else text
+        sample = (
+            text.decode("utf-8", errors="ignore") if isinstance(text, bytes) else text
+        )
         sample = sample.strip()
         if not sample:
             logger.debug("detect_skip reason=empty_sample")

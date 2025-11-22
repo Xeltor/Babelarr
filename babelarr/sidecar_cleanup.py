@@ -19,10 +19,14 @@ class SidecarCleaner:
         for root in self.directories:
             root_path = Path(root)
             if not root_path.is_dir():
-                logger.warning("sidecar_cleanup_skip path=%s reason=missing_root", root_path)
+                logger.warning(
+                    "sidecar_cleanup_skip path=%s reason=missing_root", root_path
+                )
                 continue
             if is_path_ignored(root_path, root=root_path):
-                logger.info("sidecar_cleanup_skip path=%s reason=ignored_root", root_path)
+                logger.info(
+                    "sidecar_cleanup_skip path=%s reason=ignored_root", root_path
+                )
                 continue
             for subtitle in root_path.rglob("*.srt"):
                 if is_path_ignored(subtitle, root=root_path):
