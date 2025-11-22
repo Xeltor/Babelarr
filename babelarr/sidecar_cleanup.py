@@ -15,6 +15,7 @@ class SidecarCleaner:
         self.directories = directories
 
     def remove_orphans(self) -> int:
+        """Remove orphaned subtitle sidecars and return how many were deleted."""
         removed = 0
         for root in self.directories:
             root_path = Path(root)
@@ -54,4 +55,6 @@ class SidecarCleaner:
         try:
             return parent.exists()
         except OSError:
+            # Treat permission or filesystem errors as missing parents so cleanup
+            # can continue instead of aborting the entire sweep.
             return False

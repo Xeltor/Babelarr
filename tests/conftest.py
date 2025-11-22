@@ -1,18 +1,27 @@
+from pathlib import Path
+
 import pytest
 
 from babelarr.app import Application
 from babelarr.config import Config
+from babelarr.translator import Translator
 
 
-class _DummyTranslator:
-    def translate(self, path, lang):
+class _DummyTranslator(Translator):
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
         return b""
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def wait_until_available(self):
+    def wait_until_available(self) -> None:
         return None
+
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        return True
+
+    def is_target_supported(self, target_lang: str) -> bool:
+        return True
 
 
 @pytest.fixture

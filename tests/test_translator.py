@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+from typing import cast
 
 import pytest
 import requests
@@ -74,7 +75,7 @@ def test_post_concurrency_limits_apply_when_detection_concurrency_disabled():
         max_concurrent_detection_requests=None,
     )
     post_lock = _DummyLock()
-    client._post_concurrency = post_lock
+    client._post_concurrency = cast(threading.Semaphore, post_lock)
 
     with client._acquire_slot():
         assert post_lock.acquired
@@ -152,7 +153,7 @@ def test_translate_error(monkeypatch, tmp_path, caplog):
         resp = requests.Response()
         resp.status_code = 400
         resp._content = b'{"error": "boom"}'
-        resp.headers = {"X-Test": "1"}
+        resp.headers["X-Test"] = "1"
         return resp
 
     monkeypatch.setattr(client.api, "translate_file", fake_translate_file)

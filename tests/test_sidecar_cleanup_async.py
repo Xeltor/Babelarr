@@ -1,12 +1,27 @@
 import time
+from pathlib import Path
 
 from babelarr.app import Application
 from babelarr.config import Config
 from babelarr.sidecar_cleanup import SidecarCleaner
+from babelarr.translator import Translator
 
 
-class _FakeTranslator:
-    pass
+class _FakeTranslator(Translator):
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
+        return b""
+
+    def close(self) -> None:
+        return None
+
+    def wait_until_available(self) -> None:
+        return None
+
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        return True
+
+    def is_target_supported(self, target_lang: str) -> bool:
+        return True
 
 
 def _make_config(tmp_path):

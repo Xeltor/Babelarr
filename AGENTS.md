@@ -61,6 +61,16 @@ When adding features, respect these boundaries. If cross-cutting concerns appear
 - Fail fast on unrecoverable errors; raise typed exceptions in library code. Handle at the edges (CLI/app) with clear messages.
 - Network interactions must use timeouts and retries with exponential backoff where appropriate (see `LibreTranslateClient`).
 
+## Commenting
+
+Use annotations to make interfaces explicit and keep runtime behavior unsurprising.
+
+- Annotate public functions, methods, and class attributes; prefer built-in generics (`list[str]`, `dict[str, int]`) over `typing.List`.
+- Keep optionality clear (`str | None`), and avoid `Any` unless interop forces it—document why when it does.
+- Favor `Protocol`/`TypedDict` for structured contracts instead of loose `dict`/`tuple` shapes.
+- Import from `typing`/`collections.abc` as needed; keep type-only imports guarded with `TYPE_CHECKING` to avoid runtime weight.
+- Let readable names replace redundant annotations; keep docstrings for public surfaces to describe purpose and behavior.
+
 ### Logging conventions
 
 - Rely on the logger's name (`%(name)s`) for module context; do **not** repeat it in the message.
@@ -115,6 +125,7 @@ Codex (and humans) must ensure:
 - [ ] New/changed behavior is covered by tests.
 - [ ] No debug prints; sensible logging only.
 - [ ] Log messages follow the logging conventions.
+- [ ] Comments and docstrings follow `COMMENTING_GUIDELINES.md`.
 - [ ] Public CLI behavior changes are documented in `README.md`.
 - [ ] No direct env reads or hidden globals; configuration goes through `Config`.
 - [ ] No secrets or credentials are committed.

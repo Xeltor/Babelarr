@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
@@ -766,7 +767,7 @@ class MkvSubtitleTagger:
         return detection
 
     def ensure_longest_default(
-        self, path: Path, streams: list[tuple[SubtitleStream, str | None]]
+        self, path: Path, streams: Sequence[tuple[SubtitleStream, str | None]]
     ) -> None:
         groups: dict[str, list[tuple[SubtitleStream, SubtitleMetrics, bool]]] = {}
         for stream, lang in streams:

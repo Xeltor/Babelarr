@@ -1,5 +1,7 @@
 from pathlib import Path
+from typing import Any, cast
 
+from babelarr.mkv import MkvSubtitleExtractor
 from babelarr.mkv_probe_cache import MkvProbeCache
 from babelarr.profiling import WorkloadProfiler
 
@@ -12,9 +14,13 @@ class DummyExtractor:
 def test_mkv_probe_cache_db_info(tmp_path):
     db_path = tmp_path / "cache.db"
     profiler = WorkloadProfiler(enabled=True)
-    cache = MkvProbeCache(DummyExtractor(), db_path=db_path, profiler=profiler)
+    cache = MkvProbeCache(
+        cast(MkvSubtitleExtractor, DummyExtractor()),
+        db_path=db_path,
+        profiler=profiler,
+    )
 
-    info = cache.db_info()
+    info: dict[str, Any] = cache.db_info()
     assert info["enabled"] is True
     assert info["path"] == str(db_path)
     assert info["probe_entries"] == 0

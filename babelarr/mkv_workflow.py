@@ -215,6 +215,7 @@ class MkvWorkflow:
         while True:
             if self.shutdown_event.is_set() and self.mkv_scan_queue.empty():
                 break
+            path: Path | None = None
             try:
                 _, _, entry = self.mkv_scan_queue.get(timeout=0.1)
             except queue.Empty:

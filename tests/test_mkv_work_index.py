@@ -1,8 +1,9 @@
 import threading
 import time
 from pathlib import Path
+from typing import cast
 
-from babelarr.mkv_scan import ProcessResult
+from babelarr.mkv_scan import MkvScanner, ProcessResult
 from babelarr.mkv_work_index import MkvWorkIndex
 from babelarr.mkv_workflow import MkvWorkflow
 
@@ -84,7 +85,7 @@ def test_workflow_replays_persisted_tasks(tmp_path: Path) -> None:
     scanner = _DummyScanner()
     shutdown = threading.Event()
     workflow = MkvWorkflow(
-        scanner=scanner,
+        scanner=cast(MkvScanner, scanner),
         worker_count=1,
         shutdown_event=shutdown,
         profiler=None,
@@ -104,7 +105,7 @@ def test_queue_status_reports_counts(tmp_path: Path) -> None:
     scanner = _DummyScanner()
     shutdown = threading.Event()
     workflow = MkvWorkflow(
-        scanner=scanner,
+        scanner=cast(MkvScanner, scanner),
         worker_count=1,
         shutdown_event=shutdown,
         profiler=None,

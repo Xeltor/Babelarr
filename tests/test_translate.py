@@ -157,7 +157,7 @@ def test_api_key_included(monkeypatch, tmp_path):
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
         assert timeout == 3600
-        captured["data"] = data
+        captured["data"] = data or {}
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
@@ -189,6 +189,7 @@ def test_api_key_included(monkeypatch, tmp_path):
     translator.close()
 
     assert result == b"ok"
+    assert captured["data"] is not None
     assert captured["data"]["api_key"] == "secret"
 
 
@@ -200,7 +201,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
 
     def fake_post(url, *, files=None, data=None, timeout, headers=None):
         assert timeout == 3600
-        captured["data"] = data
+        captured["data"] = data or {}
         resp = requests.Response()
         resp.status_code = 200
         resp._content = b"ok"
@@ -231,6 +232,7 @@ def test_src_lang_included(monkeypatch, tmp_path):
     translator.close()
 
     assert result == b"ok"
+    assert captured["data"] is not None
     assert captured["data"]["source"] == "xx"
 
 

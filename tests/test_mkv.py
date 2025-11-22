@@ -15,6 +15,7 @@ from babelarr.mkv import (
     SubtitleStream,
     normalize_language_code,
 )
+from babelarr.mkv_probe_cache import MkvProbeCache
 from babelarr.mkv_scan import MkvScanner
 from babelarr.translator import LibreTranslateClient
 
@@ -234,7 +235,19 @@ def test_detect_and_tag_skips_existing_language(monkeypatch):
 
 
 class _FallbackTranslator:
-    def supports_translation(self, source, target):
+    def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
+        return b""
+
+    def close(self) -> None:
+        return None
+
+    def wait_until_available(self) -> None:
+        return None
+
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        return True
+
+    def is_target_supported(self, target_lang: str) -> bool:
         return True
 
 
@@ -245,7 +258,7 @@ class _DummyTagger:
 def test_pick_source_stream_uses_other_languages():
     scanner = MkvScanner(
         [],
-        _DummyTagger(),
+        cast(MkvSubtitleTagger, _DummyTagger()),
         _FallbackTranslator(),
         ensure_langs=["eng", "nl"],
         preferred_source="eng",
@@ -269,7 +282,7 @@ def test_pick_source_prefers_english_when_available():
     translator = _FallbackTranslator()
     scanner = MkvScanner(
         [],
-        _DummyTagger(),
+        cast(MkvSubtitleTagger, _DummyTagger()),
         translator,
         ensure_langs=["bos"],
         preferred_source="bos",
@@ -304,7 +317,7 @@ def test_pick_source_prefers_english_when_available():
 def test_map_streams_prefers_non_specialized_tracks():
     scanner = MkvScanner(
         [],
-        _DummyTagger(),
+        cast(MkvSubtitleTagger, _DummyTagger()),
         _FallbackTranslator(),
         ensure_langs=["eng"],
     )
@@ -349,7 +362,7 @@ def test_ensure_tagged_streams_marks_language():
 
     scanner = MkvScanner(
         [],
-        DummyTagger(),
+        cast(MkvSubtitleTagger, DummyTagger()),
         _FallbackTranslator(),
         ensure_langs=["eng"],
         preferred_source="eng",
@@ -613,6 +626,18 @@ class _TranslationDummyTranslator:
     def translate(self, path: Path, lang: str, *, src_lang: str | None = None) -> bytes:
         return self.payload
 
+    def close(self) -> None:
+        return None
+
+    def wait_until_available(self) -> None:
+        return None
+
+    def supports_translation(self, src_lang: str, target_lang: str) -> bool:
+        return True
+
+    def is_target_supported(self, target_lang: str) -> bool:
+        return True
+
 
 class _TranslationDummyProbeCache:
     def list_streams(self, path: Path) -> list[SubtitleStream]:
@@ -634,10 +659,10 @@ def _build_translation_scanner(
 
     return MkvScanner(
         directories=[str(tmp_path)],
-        tagger=DummyTagger(),
+        tagger=cast(MkvSubtitleTagger, DummyTagger()),
         translator=translator,
         ensure_langs=["en"],
-        probe_cache=_TranslationDummyProbeCache(),
+        probe_cache=cast(MkvProbeCache, _TranslationDummyProbeCache()),
         cache_enabled=False,
     )
 

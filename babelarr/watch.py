@@ -90,26 +90,27 @@ class MkvHandler(PatternMatchingEventHandler):
         self.app.invalidate_mkv_cache_state(path)
 
     def on_created(self, event):
-        logger.debug("mkv_detect_new path=%s", Path(event.src_path).name)
-        self._handle(Path(event.src_path))
+        src = Path(str(event.src_path))
+        logger.debug("mkv_detect_new path=%s", src.name)
+        self._handle(src)
 
     def on_moved(self, event):
-        dest = Path(event.dest_path)
+        dest = Path(str(event.dest_path))
         logger.debug(
             "mkv_detect_move src=%s dest=%s",
-            Path(event.src_path).name,
+            Path(str(event.src_path)).name,
             dest.name,
         )
-        self._invalidate(Path(event.src_path))
+        self._invalidate(Path(str(event.src_path)))
         self._handle(dest)
 
     def on_deleted(self, event):
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))
         logger.debug("mkv_detect_deleted path=%s", path.name)
         self._invalidate(path)
 
     def on_modified(self, event):
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))
         logger.debug("mkv_detect_modified path=%s", path.name)
         self._invalidate(path)
         self._handle(path)
