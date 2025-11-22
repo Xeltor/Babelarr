@@ -76,7 +76,7 @@ Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and
 
 Retry/backoff timing, debounce, stabilization, and HTTP timeout values are internal defaults tuned for typical workloads and are not configurable via environment variables.
 
-The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation. A daily cleanup job also removes orphaned sidecar subtitles whose MKV parents no longer exist.
+The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation. A daily cleanup job also removes orphaned sidecar subtitles whose MKV parents no longer exist, running asynchronously so the main loop stays responsive.
 
 If LibreTranslate is unreachable at startup or during operation, Babelarr logs the outage and pauses worker threads until the service becomes available again.
 

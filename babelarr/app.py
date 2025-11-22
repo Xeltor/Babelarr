@@ -46,6 +46,8 @@ class Application:
         self.workflow: MkvWorkflow | None = None
         self.profiling_dashboard = profiling_dashboard
         self.sidecar_cleaner: SidecarCleaner | None = None
+        self._sidecar_cleanup_thread: threading.Thread | None = None
+        self._sidecar_cleanup_lock = threading.Lock()
 
     def request_mkv_scan(self) -> None:
         if self.workflow:
@@ -123,6 +125,7 @@ class Application:
                 watcher_thread.join()
             if self.workflow:
                 self.workflow.stop()
+            self._wait_for_sidecar_cleanup()
             close = getattr(self.translator, "close", None)
             if callable(close):
                 close()
@@ -141,7 +144,24 @@ class Application:
     def _clean_orphaned_sidecars(self) -> None:
         if not self.sidecar_cleaner:
             return
+        with self._sidecar_cleanup_lock:
+            if self._sidecar_cleanup_thread and self._sidecar_cleanup_thread.is_alive():
+                logger.info("sidecar_cleanup_skip reason=in_progress")
+                return
+            self._sidecar_cleanup_thread = threading.Thread(
+                target=self._run_sidecar_cleanup,
+                name="sidecar-cleanup",
+                daemon=True,
+            )
+            self._sidecar_cleanup_thread.start()
+
+    def _run_sidecar_cleanup(self) -> None:
         try:
             self.sidecar_cleaner.remove_orphans()
         except Exception as exc:
             logger.error("sidecar_cleanup_error error=%s", exc)
+
+    def _wait_for_sidecar_cleanup(self) -> None:
+        thread = self._sidecar_cleanup_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=5)
