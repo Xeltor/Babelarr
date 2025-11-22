@@ -88,6 +88,8 @@ Use annotations to make interfaces explicit and keep runtime behavior unsurprisi
 - Do not rely on coverage exclusions or throwaway/mocked-out tests to meet thresholds; measure the whole codebase and add meaningful coverage instead.
 - When fixing a bug, first add a failing test that reproduces it; then implement the fix.
 - Target coverage for new/changed code: **≥85%** (enforce in CI if/when coverage tooling is added).
+- LibreTranslate tests may hit a live instance at `http://192.168.1.200:5000`; keep them stable and skip or mark as integration only if the service is unavailable.
+- Fixtures: `tests/fixtures/sample_subs.mkv` is a small MKV (~86 KB) used for extractor/integration tests; avoid adding larger media files to satisfy pre-commit size limits.
 
 Common commands:
 ```bash
