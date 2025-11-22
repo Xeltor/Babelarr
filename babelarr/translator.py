@@ -9,7 +9,7 @@ from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, cast
 
 import requests
 
@@ -36,18 +36,23 @@ class Translator(Protocol):
 
         Returns the translated subtitle bytes or raises an exception.
         """
+        ...
 
     def close(self) -> None:
         """Close any open resources."""
+        ...
 
     def wait_until_available(self) -> None:  # pragma: no cover - optional
         """Block until the translation service becomes available."""
+        ...
 
     def supports_translation(self, src_lang: str, target_lang: str) -> bool:
         """Return True when *src_lang* can be translated to *target_lang*."""
+        ...
 
     def is_target_supported(self, target_lang: str) -> bool:
         """Return True if *target_lang* is supported by the service."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -196,6 +201,8 @@ class LibreTranslateClient:
             yield
             return
         for semaphore in semaphores:
+            # Detection requests prefer their own limiter but fall back to the main
+            # translation semaphore so we never flood the API with background probes.
             semaphore.acquire()
         try:
             yield
@@ -257,6 +264,7 @@ class LibreTranslateClient:
         if logger.isEnabledFor(logging.DEBUG):
             import tempfile
 
+            # Persist the raw payload for post-mortem debugging without bloating logs.
             tmp = tempfile.NamedTemporaryFile(
                 delete=False, prefix="babelarr-", suffix=".err"
             )
@@ -279,7 +287,12 @@ class LibreTranslateClient:
     ) -> bytes:
         """Send translation request and handle optional download flow."""
         resp = self._call_api_until_success(
-            lambda api: api.translate_file(path, src_lang, target_lang, self.api_key),
+            cast(
+                Callable[[LibreTranslateAPI], requests.Response],
+                lambda api: api.translate_file(
+                    path, src_lang, target_lang, self.api_key
+                ),
+            ),
             "LibreTranslate",
         )
 
@@ -316,7 +329,11 @@ class LibreTranslateClient:
         with self._acquire_slot(detection=True):
             with self._profile(self._detection_profile_name):
                 resp = self._call_api_until_success(
-                    lambda api: api.detect(sample), "LibreTranslate detect"
+                    cast(
+                        Callable[[LibreTranslateAPI], requests.Response],
+                        lambda api: api.detect(sample),
+                    ),
+                    "LibreTranslate detect",
                 )
         try:
             payload = resp.json()
@@ -379,6 +396,8 @@ class LibreTranslateClient:
                     )
                     raise
                 delay = self.backoff_delay * (2 ** (attempt - 1))
+                # Use exponential backoff to give the service time to recover before
+                # retrying subsequent attempts.
                 logger.warning(
                     "attempt_failed attempt=%s error=%s delay=%s",
                     attempt,
