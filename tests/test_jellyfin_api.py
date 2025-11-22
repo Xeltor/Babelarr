@@ -1,14 +1,26 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import requests
 
 from babelarr.jellyfin_api import JellyfinClient
 
+if TYPE_CHECKING:
+    from pytest import MonkeyPatch
 
-def test_refresh_path(monkeypatch):
+
+def test_refresh_path(monkeypatch: MonkeyPatch) -> None:
     calls: dict[str, object] = {}
 
-    def fake_post(url, *, json=None, headers=None, timeout):
+    def fake_post(
+        url: str,
+        *,
+        json: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: int,
+    ) -> requests.Response:
         calls["url"] = url
         calls["json"] = json
         calls["headers"] = headers

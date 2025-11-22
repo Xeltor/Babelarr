@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
-from contextlib import contextmanager, nullcontext
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeVar, cast
@@ -188,7 +188,7 @@ class LibreTranslateClient:
         )
 
     @contextmanager
-    def _acquire_slot(self, *, detection: bool = False):
+    def _acquire_slot(self, *, detection: bool = False) -> Iterator[None]:
         semaphores: list[threading.Semaphore] = []
         if detection:
             if self._detection_concurrency is not None:
@@ -210,7 +210,7 @@ class LibreTranslateClient:
             for semaphore in reversed(semaphores):
                 semaphore.release()
 
-    def _profile(self, name: str):
+    def _profile(self, name: str) -> AbstractContextManager[None]:
         if not self.profiler:
             return nullcontext()
         return self.profiler.track(name)

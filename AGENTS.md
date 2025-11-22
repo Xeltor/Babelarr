@@ -85,6 +85,7 @@ Use annotations to make interfaces explicit and keep runtime behavior unsurprisi
 - Keep unit tests fast and hermetic (no network or real filesystem where avoidable).
 - Mark slower or external tests as integration: `@pytest.mark.integration`. Unit suite must pass by default without special env.
 -- Example: `watch.py` tests use `pytest.mark.integration`.
+- Do not rely on coverage exclusions or throwaway/mocked-out tests to meet thresholds; measure the whole codebase and add meaningful coverage instead.
 - When fixing a bug, first add a failing test that reproduces it; then implement the fix.
 - Target coverage for new/changed code: **≥85%** (enforce in CI if/when coverage tooling is added).
 

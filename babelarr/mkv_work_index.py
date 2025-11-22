@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class MkvWorkIndex:
     """Persist MKV translation tasks so restarts can resume work."""
 
-    def __init__(self, db_path: str | Path | None):
+    def __init__(self, db_path: str | Path | None) -> None:
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._db_path = Path(db_path) if db_path else None

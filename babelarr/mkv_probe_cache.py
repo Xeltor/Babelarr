@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from collections import OrderedDict
 from collections.abc import Iterable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 from .mkv import MkvSubtitleExtractor, SubtitleStream
@@ -82,7 +82,7 @@ class MkvProbeCache:
                     self._conn = None
                     self._db_path = None
 
-    def _profile(self, name: str):
+    def _profile(self, name: str) -> AbstractContextManager[None]:
         if not self._profiler:
             return nullcontext()
         return self._profiler.track(name)

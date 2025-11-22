@@ -24,7 +24,7 @@ class _FakeTranslator(Translator):
         return True
 
 
-def _make_config(tmp_path):
+def _make_config(tmp_path: Path) -> Config:
     return Config(
         root_dirs=[],
         api_url="http://example",
@@ -34,7 +34,7 @@ def _make_config(tmp_path):
     )
 
 
-def test_sidecar_cleanup_runs_in_background(tmp_path):
+def test_sidecar_cleanup_runs_in_background(tmp_path: Path) -> None:
     class SlowCleaner(SidecarCleaner):
         def remove_orphans(self) -> int:
             time.sleep(0.2)

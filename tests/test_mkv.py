@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import json
 import os
 import time
 import uuid
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -19,16 +21,19 @@ from babelarr.mkv_probe_cache import MkvProbeCache
 from babelarr.mkv_scan import MkvScanner
 from babelarr.translator import LibreTranslateClient
 
+if TYPE_CHECKING:
+    from pytest import MonkeyPatch
+
 
 class DummyCompletedProcess:
-    def __init__(self, stdout: str = "", bytes_stdout: bytes | None = None):
+    def __init__(self, stdout: str = "", bytes_stdout: bytes | None = None) -> None:
         self.stdout = bytes_stdout if bytes_stdout is not None else stdout
         self.stderr = ""
         self.returncode = 0
         self.bytes_stdout = bytes_stdout
 
 
-def test_list_streams_parses_ffprobe(monkeypatch):
+def test_list_streams_parses_ffprobe(monkeypatch: MonkeyPatch) -> None:
     payload = {
         "streams": [
             {
@@ -46,7 +51,7 @@ def test_list_streams_parses_ffprobe(monkeypatch):
         ]
     }
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         assert cmd[0] == "ffprobe"
         return DummyCompletedProcess(stdout=json.dumps(payload))
 
@@ -64,16 +69,24 @@ def test_list_streams_parses_ffprobe(monkeypatch):
     assert streams[1].track_selector == "track:s2"
 
 
-def test_extract_sample_invokes_ffmpeg(monkeypatch):
-    captured = {}
+def test_extract_sample_invokes_ffmpeg(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         captured["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"sample data")
         return DummyCompletedProcess(bytes_stdout=b"sample data")
 
     monkeypatch.setattr("subprocess.run", fake_run)
+    # Ensure the temp output exists before replacement
+    monkeypatch.setattr(
+        Path,
+        "replace",
+        lambda self, target: target.write_bytes(b"sample data") or target,
+    )
 
     extractor = MkvSubtitleExtractor()
+    extractor._has_mkvextract = False  # force ffmpeg path for consistent command
     stream = SubtitleStream(
         ffprobe_index=7,
         subtitle_index=2,
@@ -92,16 +105,26 @@ def test_extract_sample_invokes_ffmpeg(monkeypatch):
     assert "copy" in captured["cmd"]
 
 
-def test_extract_sample_transcodes_ass(monkeypatch):
-    captured = {}
+def test_extract_sample_transcodes_ass(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         captured["cmd"] = cmd
+        Path(cmd[-1]).write_text(
+            "[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name\nStyle: Default\n\n[Events]\nFormat: Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello",
+            encoding="utf-8",
+        )
         return DummyCompletedProcess(bytes_stdout=b"sample data")
 
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        Path,
+        "replace",
+        lambda self, target: target.write_bytes(b"sample data") or target,
+    )
 
     extractor = MkvSubtitleExtractor()
+    extractor._has_mkvextract = False
     stream = SubtitleStream(
         ffprobe_index=7,
         subtitle_index=2,
@@ -113,22 +136,27 @@ def test_extract_sample_transcodes_ass(monkeypatch):
     )
     sample = extractor.extract_sample(Path("movie.mkv"), stream)
 
-    assert sample == b"sample data"
+    assert b"Hello" in sample
     assert "-c:s" in captured["cmd"] or "-c" in captured["cmd"]
     assert "srt" in captured["cmd"]
 
 
-def test_extract_stream_writes_srt(monkeypatch, tmp_path):
-    captured = {}
+def test_extract_stream_writes_srt(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
     dest = tmp_path / "movie.en.srt"
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         captured["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"raw")
         return DummyCompletedProcess()
 
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        Path, "replace", lambda self, target: target.write_bytes(b"raw") or target
+    )
 
     extractor = MkvSubtitleExtractor()
+    extractor._has_mkvextract = False
     stream = SubtitleStream(
         ffprobe_index=7,
         subtitle_index=2,
@@ -147,32 +175,34 @@ def test_extract_stream_writes_srt(monkeypatch, tmp_path):
     assert "srt" in captured["cmd"]
 
 
-def test_normalize_language_code_handles_two_letter():
+def test_normalize_language_code_handles_two_letter() -> None:
     assert normalize_language_code("EN") == "eng"
     assert normalize_language_code("eng") == "eng"
     assert normalize_language_code(None) is None
 
 
-def test_detect_and_tag_applies_new_language(monkeypatch):
+def test_detect_and_tag_applies_new_language(monkeypatch: MonkeyPatch) -> None:
     sample_calls = []
 
     class FakeExtractor(MkvSubtitleExtractor):
-        def __init__(self):
+        def __init__(self) -> None:
             pass
 
-        def extract_sample(self, path, stream):
+        def extract_sample(self, path: Path, stream: SubtitleStream) -> bytes:
             sample_calls.append((path, stream))
             return b"hello"
 
     class FakeTranslator:
-        def detect_language(self, sample, *, min_confidence=0.0):
+        def detect_language(
+            self, sample: bytes, *, min_confidence: float = 0.0
+        ) -> DetectionResult | None:
             assert sample == b"hello"
             assert min_confidence == pytest.approx(0.9)
             return DetectionResult("en", 0.93)
 
     mkv_calls = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         mkv_calls.append(cmd)
         return DummyCompletedProcess(bytes_stdout=b"")
 
@@ -200,16 +230,18 @@ def test_detect_and_tag_applies_new_language(monkeypatch):
     assert mkv_calls[0][0] == "mkvpropedit"
 
 
-def test_detect_and_tag_skips_existing_language(monkeypatch):
+def test_detect_and_tag_skips_existing_language(monkeypatch: MonkeyPatch) -> None:
     class FakeExtractor(MkvSubtitleExtractor):
-        def __init__(self):
+        def __init__(self) -> None:
             pass
 
-        def extract_sample(self, path, stream):
+        def extract_sample(self, path: Path, stream: SubtitleStream) -> bytes:
             return b"ignored"
 
     class FakeTranslator:
-        def detect_language(self, sample, *, min_confidence=0.0):
+        def detect_language(
+            self, sample: bytes, *, min_confidence: float = 0.0
+        ) -> DetectionResult:
             return DetectionResult("en", 0.95)
 
     monkeypatch.setattr(
@@ -255,7 +287,7 @@ class _DummyTagger:
     extractor = None
 
 
-def test_pick_source_stream_uses_other_languages():
+def test_pick_source_stream_uses_other_languages() -> None:
     scanner = MkvScanner(
         [],
         cast(MkvSubtitleTagger, _DummyTagger()),
@@ -278,7 +310,7 @@ def test_pick_source_stream_uses_other_languages():
     assert selected is stream
 
 
-def test_pick_source_prefers_english_when_available():
+def test_pick_source_prefers_english_when_available() -> None:
     translator = _FallbackTranslator()
     scanner = MkvScanner(
         [],
@@ -314,7 +346,7 @@ def test_pick_source_prefers_english_when_available():
     assert selected is english
 
 
-def test_map_streams_prefers_non_specialized_tracks():
+def test_map_streams_prefers_non_specialized_tracks() -> None:
     scanner = MkvScanner(
         [],
         cast(MkvSubtitleTagger, _DummyTagger()),
@@ -349,13 +381,13 @@ def test_map_streams_prefers_non_specialized_tracks():
     assert candidates["en"][0] is general
 
 
-def test_ensure_tagged_streams_marks_language():
+def test_ensure_tagged_streams_marks_language() -> None:
     tagged: list[SubtitleStream] = []
 
     class DummyTagger:
         extractor = None
 
-        def detect_and_tag(self, path, stream):
+        def detect_and_tag(self, path: Path, stream: SubtitleStream) -> DetectionResult:
             tagged.append(stream)
             stream.language = "eng"
             return DetectionResult("eng", 0.6)
@@ -381,21 +413,25 @@ def test_ensure_tagged_streams_marks_language():
     assert tagged == [stream]
 
 
-def test_detect_and_tag_uses_title_hint_when_metadata_wrong(monkeypatch):
+def test_detect_and_tag_uses_title_hint_when_metadata_wrong(
+    monkeypatch: MonkeyPatch,
+) -> None:
     class FakeExtractor(MkvSubtitleExtractor):
-        def __init__(self):
+        def __init__(self) -> None:
             pass
 
-        def extract_sample(self, path, stream):
+        def extract_sample(self, path: Path, stream: SubtitleStream) -> bytes:
             return b"ignored"
 
     class FakeTranslator:
-        def detect_language(self, sample, *, min_confidence=0.0):
+        def detect_language(
+            self, sample: bytes, *, min_confidence: float = 0.0
+        ) -> DetectionResult:
             return DetectionResult("en", 0.95)
 
-    applied = {}
+    applied: dict[str, list[str]] = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         applied["cmd"] = cmd
         return DummyCompletedProcess(bytes_stdout=b"")
 
@@ -421,16 +457,18 @@ def test_detect_and_tag_uses_title_hint_when_metadata_wrong(monkeypatch):
     assert applied["cmd"][0] == "mkvpropedit"
 
 
-def test_detect_and_tag_skips_unsupported_codec():
+def test_detect_and_tag_skips_unsupported_codec() -> None:
     class FakeExtractor(MkvSubtitleExtractor):
-        def __init__(self):
+        def __init__(self) -> None:
             pass
 
-        def extract_sample(self, path, stream):
+        def extract_sample(self, path: Path, stream: SubtitleStream) -> bytes:
             raise AssertionError("should not sample unsupported codecs")
 
     class FakeTranslator:
-        def detect_language(self, sample, *, min_confidence=0.0):
+        def detect_language(
+            self, sample: bytes, *, min_confidence: float = 0.0
+        ) -> DetectionResult:
             raise AssertionError("should not detect unsupported codecs")
 
     tagger = MkvSubtitleTagger(
@@ -450,10 +488,10 @@ def test_detect_and_tag_skips_unsupported_codec():
     assert detection is None
 
 
-def test_ensure_longest_default_sets_flag(monkeypatch):
-    calls = []
+def test_ensure_longest_default_sets_flag(monkeypatch: MonkeyPatch) -> None:
+    calls: list[list[str]] = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         calls.append(cmd)
         return DummyCompletedProcess(bytes_stdout=b"")
 
@@ -501,10 +539,10 @@ def test_ensure_longest_default_sets_flag(monkeypatch):
     assert len(calls) == 4  # default + forced for each stream
 
 
-def test_metrics_penalize_forced(monkeypatch):
-    calls = []
+def test_metrics_penalize_forced(monkeypatch: MonkeyPatch) -> None:
+    calls: list[list[str]] = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         calls.append(cmd)
         return DummyCompletedProcess(bytes_stdout=b"")
 
@@ -552,10 +590,10 @@ def test_metrics_penalize_forced(monkeypatch):
     assert len(calls) == 4
 
 
-def test_non_english_defaults_removed(monkeypatch):
-    calls = []
+def test_non_english_defaults_removed(monkeypatch: MonkeyPatch) -> None:
+    calls: list[list[str]] = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> DummyCompletedProcess:
         calls.append(cmd)
         return DummyCompletedProcess(bytes_stdout=b"")
 

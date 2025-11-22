@@ -32,7 +32,7 @@ class Application:
         mkv_tagger: MkvSubtitleTagger | None = None,
         profiler: WorkloadProfiler | None = None,
         profiling_dashboard: ProfilingDashboard | None = None,
-    ):
+    ) -> None:
         self.config = config
         self.translator = translator
         self.jellyfin = jellyfin

@@ -5,17 +5,21 @@ import queue
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from watchdog.events import PatternMatchingEventHandler
+from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
 from watchdog.observers import Observer
 
 from .ignore import is_path_ignored
+
+if TYPE_CHECKING:
+    from .app import Application
 
 logger = logging.getLogger(__name__)
 
 
 class MkvHandler(PatternMatchingEventHandler):
-    def __init__(self, app, root: Path | str | None = None):
+    def __init__(self, app: Application, root: Path | str | None = None) -> None:
         self.app = app
         self._debounce = self.app.config.debounce
         self._max_wait = self.app.config.stabilize_timeout
@@ -89,12 +93,12 @@ class MkvHandler(PatternMatchingEventHandler):
     def _invalidate(self, path: Path) -> None:
         self.app.invalidate_mkv_cache_state(path)
 
-    def on_created(self, event):
+    def on_created(self, event: FileSystemEvent) -> None:
         src = Path(str(event.src_path))
         logger.debug("mkv_detect_new path=%s", src.name)
         self._handle(src)
 
-    def on_moved(self, event):
+    def on_moved(self, event: FileSystemEvent) -> None:
         dest = Path(str(event.dest_path))
         logger.debug(
             "mkv_detect_move src=%s dest=%s",
@@ -104,12 +108,12 @@ class MkvHandler(PatternMatchingEventHandler):
         self._invalidate(Path(str(event.src_path)))
         self._handle(dest)
 
-    def on_deleted(self, event):
+    def on_deleted(self, event: FileSystemEvent) -> None:
         path = Path(str(event.src_path))
         logger.debug("mkv_detect_deleted path=%s", path.name)
         self._invalidate(path)
 
-    def on_modified(self, event):
+    def on_modified(self, event: FileSystemEvent) -> None:
         path = Path(str(event.src_path))
         logger.debug("mkv_detect_modified path=%s", path.name)
         self._invalidate(path)
@@ -141,7 +145,7 @@ class MkvHandler(PatternMatchingEventHandler):
         self._idle_event.set()
 
 
-def watch(app) -> None:
+def watch(app: Application) -> None:
     observer = Observer()
     observer.name = "watchdog"
     handlers: list[MkvHandler] = []

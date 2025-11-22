@@ -3,6 +3,7 @@ import logging
 import os
 import signal
 from pathlib import Path
+from types import FrameType
 
 import requests
 
@@ -184,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
         profiling_dashboard=dashboard,
     )
 
-    def handle_signal(signum, frame):
+    def handle_signal(signum: int, frame: FrameType | None) -> None:
         logger.info("received_signal signum=%s", signum)
         app.shutdown_event.set()
 

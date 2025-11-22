@@ -128,7 +128,7 @@ class ProfilingDashboard:
         profiler: WorkloadProfiler,
         host: str = "0.0.0.0",
         port: int | None = None,
-    ):
+    ) -> None:
         self.profiler = profiler
         self.host = host
         self.port = port or 0

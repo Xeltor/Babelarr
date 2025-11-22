@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import uuid
 from collections.abc import Sequence
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -151,7 +151,7 @@ class MkvSubtitleExtractor:
         self._has_mkvextract = shutil.which(self.mkvextract_path) is not None
         self._profiler = profiler
 
-    def _profile(self, name: str):
+    def _profile(self, name: str) -> AbstractContextManager[None]:
         profiler = getattr(self, "_profiler", None)
         if not profiler:
             return nullcontext()
@@ -656,7 +656,7 @@ class MkvSubtitleTagger:
         self._score_duration_weight = 0.1
         self._score_cue_weight = 5.0
 
-    def _profile(self, name: str):
+    def _profile(self, name: str) -> AbstractContextManager[None]:
         profiler = getattr(self, "_profiler", None)
         if not profiler:
             return nullcontext()

@@ -7,7 +7,7 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -61,7 +61,7 @@ class WorkloadProfiler:
                 self._samples[name] = samples
             samples.append(duration)
 
-    def _snapshot(self):
+    def _snapshot(self) -> tuple[dict[str, TimingStats], dict[str, list[float]]]:
         with self._lock:
             stats_copy = {
                 name: TimingStats(
@@ -127,7 +127,7 @@ class WorkloadProfiler:
         return lines
 
     @contextmanager
-    def track(self, name: str):
+    def track(self, name: str) -> Iterator[None]:
         if not self.enabled:
             yield
             return

@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from collections.abc import Iterable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +22,7 @@ from .mkv import (
     title_indicates_hearing_impaired,
 )
 from .mkv_probe_cache import MkvProbeCache
+from .mkv_work_index import MkvWorkIndex
 from .profiling import WorkloadProfiler
 from .translator import Translator
 
@@ -53,7 +54,7 @@ class MkvScanner:
         preferred_source: str | None = None,
         profiler: WorkloadProfiler | None = None,
         jellyfin_client: JellyfinClient | None = None,
-        work_index=None,
+        work_index: MkvWorkIndex | None = None,
     ) -> None:
         self.directories = directories
         self.tagger = tagger
@@ -75,7 +76,7 @@ class MkvScanner:
         self._jellyfin_client = jellyfin_client
         self._work_index = work_index
 
-    def _profile(self, name: str):
+    def _profile(self, name: str) -> AbstractContextManager[None]:
         if not self.profiler:
             return nullcontext()
         return self.profiler.track(name)

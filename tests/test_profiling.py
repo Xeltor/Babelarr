@@ -7,11 +7,11 @@ from babelarr.profiling import WorkloadProfiler
 
 
 class DummyExtractor:
-    def list_streams(self, path: Path):
+    def list_streams(self, path: Path) -> list[object]:
         return []
 
 
-def test_mkv_probe_cache_db_info(tmp_path):
+def test_mkv_probe_cache_db_info(tmp_path: Path) -> None:
     db_path = tmp_path / "cache.db"
     profiler = WorkloadProfiler(enabled=True)
     cache = MkvProbeCache(
@@ -38,3 +38,22 @@ def test_mkv_probe_cache_db_info(tmp_path):
     assert info["cache_entries"] == 1
     assert info["db_reads"]["count"] == 1
     assert info["db_writes"]["count"] >= 2
+
+
+def test_profiler_records_and_reports() -> None:
+    profiler = WorkloadProfiler(enabled=True, sample_limit=4)
+    with profiler.track("task"):
+        pass
+    profiler.record("task", -1)  # ignored negative
+    metrics = profiler.metrics()
+    assert metrics["task"]["count"] == 1
+    lines = profiler.report_lines()
+    assert any("task count=1" in line for line in lines)
+
+
+def test_profiler_disabled_returns_empty() -> None:
+    profiler = WorkloadProfiler(enabled=False)
+    profiler.record("noop", 1.0)
+    assert profiler.metrics() == {}
+    assert profiler.report_lines() == []
+    assert WorkloadProfiler._percentile([], 50) == 0.0
