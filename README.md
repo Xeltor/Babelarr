@@ -76,7 +76,7 @@ Command-line options `--log-level` and `--log-file` override the `LOG_LEVEL` and
 
 Retry/backoff timing, debounce, stabilization, and HTTP timeout values are internal defaults tuned for typical workloads and are not configurable via environment variables.
 
-The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation.
+The application scans MKV directories on startup, after file changes, and at a configurable interval (default every 180 minutes) thereafter. Translated subtitles are saved beside the MKV with language suffixes (e.g. `.nl.srt`, `.bs.srt`), and the watcher waits for files to stabilize before scheduling a rescan so ongoing writes don’t interfere with translation. A daily cleanup job also removes orphaned sidecar subtitles whose MKV parents no longer exist.
 
 If LibreTranslate is unreachable at startup or during operation, Babelarr logs the outage and pauses worker threads until the service becomes available again.
 
@@ -111,7 +111,7 @@ services:
 
 ## Development
 
-After activating the virtual environment, run `make setup` to install development dependencies and pre-commit hooks. The provided Makefile wraps common development tasks:
+After activating the virtual environment (e.g., `source .venv/bin/activate` so `python3 -m pytest` uses the venv), run `make setup` to install development dependencies and pre-commit hooks. The provided Makefile wraps common development tasks:
 
 ```bash
 make setup  # install dev dependencies and pre-commit hooks

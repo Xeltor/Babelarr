@@ -17,6 +17,7 @@ from .mkv_work_index import MkvWorkIndex
 from .mkv_workflow import MkvWorkflow
 from .profiling import WorkloadProfiler
 from .profiling_ui import ProfilingDashboard
+from .sidecar_cleanup import SidecarCleaner
 from .translator import Translator
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class Application:
         self._work_index: MkvWorkIndex | None = None
         self.workflow: MkvWorkflow | None = None
         self.profiling_dashboard = profiling_dashboard
+        self.sidecar_cleaner: SidecarCleaner | None = None
 
     def request_mkv_scan(self) -> None:
         if self.workflow:
@@ -101,10 +103,12 @@ class Application:
 
         watcher_thread: threading.Thread | None = None
         if self.config.mkv_dirs:
+            self.sidecar_cleaner = SidecarCleaner(self.config.mkv_dirs)
             watcher_thread = threading.Thread(
                 target=watch_module.watch, args=(self,), name="watcher"
             )
             watcher_thread.start()
+            self._schedule_sidecar_cleanup()
         logger.info("service_started")
         if self.profiling_dashboard:
             self.profiling_dashboard.start()
@@ -129,3 +133,15 @@ class Application:
             if self.profiling_dashboard:
                 self.profiling_dashboard.stop()
             logger.info("shutdown_complete")
+
+    def _schedule_sidecar_cleanup(self) -> None:
+        self._clean_orphaned_sidecars()
+        schedule.every().day.do(self._clean_orphaned_sidecars)
+
+    def _clean_orphaned_sidecars(self) -> None:
+        if not self.sidecar_cleaner:
+            return
+        try:
+            self.sidecar_cleaner.remove_orphans()
+        except Exception as exc:
+            logger.error("sidecar_cleanup_error error=%s", exc)
