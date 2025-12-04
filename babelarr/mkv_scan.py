@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, Future, as_completed, wait
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +56,7 @@ class MkvScanner:
         profiler: WorkloadProfiler | None = None,
         jellyfin_client: JellyfinClient | None = None,
         work_index: MkvWorkIndex | None = None,
+        translation_workers: int | None = None,
     ) -> None:
         self.directories = directories
         self.tagger = tagger
@@ -75,6 +77,17 @@ class MkvScanner:
         )
         self._jellyfin_client = jellyfin_client
         self._work_index = work_index
+        thread_count = translation_workers or 1
+        thread_count = max(1, thread_count)
+        self._translation_executor: ThreadPoolExecutor | None = ThreadPoolExecutor(
+            max_workers=thread_count,
+            thread_name_prefix="lt-translation",
+        )
+
+    @property
+    def translation_executor(self) -> ThreadPoolExecutor:
+        assert self._translation_executor is not None
+        return self._translation_executor
 
     def _profile(self, name: str) -> AbstractContextManager[None]:
         if not self.profiler:
@@ -467,69 +480,87 @@ class MkvScanner:
         had_source_language = False
         extractor = self.tagger.extractor
         extracted_streams: dict[str, Path] = {}
-        try:
-            for target_lang in self.ensure_langs:
-                if not self._needs_translation(
-                    path, target_lang, mtime_ns, existing_langs
-                ):
-                    continue
-                had_pending_translation = True
-                source_lang, stream = self._pick_source_stream(
-                    path, candidates, target_lang
+        jobs: list[tuple[str, str, SubtitleStream, Path | None, bool]] = []
+        for target_lang in self.ensure_langs:
+            if not self._needs_translation(path, target_lang, mtime_ns, existing_langs):
+                continue
+            had_pending_translation = True
+            source_lang, stream = self._pick_source_stream(
+                path, candidates, target_lang
+            )
+            if not source_lang or not stream:
+                logger.warning(
+                    "skip_translation path=%s target=%s reason=no_source",
+                    path.name,
+                    target_lang,
                 )
-                if not source_lang or not stream:
-                    logger.warning(
-                        "skip_translation path=%s target=%s reason=no_source",
-                        path.name,
-                        target_lang,
-                    )
-                    continue
-                had_source_language = True
-                try:
-                    source_path: Path | None = None
-                    if extractor:
-                        key = stream.track_selector
-                        source_path = extracted_streams.get(key)
-                        if source_path is None:
-                            source_path = extractor.create_temp_path(".srt")
-                            extractor.extract_stream(path, stream, source_path)
-                            extracted_streams[key] = source_path
-                    translated_stream = self._translate_stream(
+                continue
+            had_source_language = True
+            source_path: Path | None = None
+            cleanup_temp = True
+            if extractor:
+                key = stream.track_selector
+                source_path = extracted_streams.get(key)
+                if source_path is None:
+                    source_path = extractor.create_temp_path(".srt")
+                    extractor.extract_stream(path, stream, source_path)
+                    extracted_streams[key] = source_path
+                cleanup_temp = False
+            jobs.append((source_lang, target_lang, stream, source_path, cleanup_temp))
+        future_to_job: dict[Future[bool], tuple[str, str]] = {}
+        missing_during_translation = False
+        try:
+            if jobs:
+                for source_lang, target_lang, stream, source_path, cleanup_temp in jobs:
+                    future = self.translation_executor.submit(
+                        self._translate_stream,
                         path,
                         stream,
                         source_lang,
                         target_lang,
                         source_path=source_path,
                         mkv_mtime_ns=mtime_ns,
+                        cleanup_temp=cleanup_temp,
                     )
-                except FileNotFoundError:
-                    logger.info(
-                        "mkv_missing_during_translation path=%s target=%s",
-                        path.name,
-                        target_lang,
-                    )
-                    if self.cache_enabled:
-                        self._probe_cache.delete_entry(path)
-                    self._probe_cache.invalidate_path(path)
-                    return translated, True, False
-                except Exception as exc:
-                    logger.error(
-                        "fail_translation path=%s source=%s target=%s error=%s",
-                        path.name,
-                        source_lang,
-                        target_lang,
-                        exc,
-                    )
-                    translation_errors = True
-                    continue
-                if translated_stream:
-                    translated += 1
+                    future_to_job[future] = (source_lang, target_lang)
+                for future in as_completed(future_to_job):
+                    source_lang, target_lang = future_to_job.pop(future)
+                    try:
+                        translated_stream: bool | None = future.result()
+                    except FileNotFoundError:
+                        logger.info(
+                            "mkv_missing_during_translation path=%s target=%s",
+                            path.name,
+                            target_lang,
+                        )
+                        if self.cache_enabled:
+                            self._probe_cache.delete_entry(path)
+                        self._probe_cache.invalidate_path(path)
+                        translation_errors = True
+                        missing_during_translation = True
+                        break
+                    except Exception as exc:
+                        logger.error(
+                            "fail_translation path=%s source=%s target=%s error=%s",
+                            path.name,
+                            source_lang,
+                            target_lang,
+                            exc,
+                        )
+                        translation_errors = True
+                        continue
+                    if translated_stream:
+                        translated += 1
         finally:
+            if missing_during_translation and future_to_job:
+                wait(list(future_to_job))
             for temp_path in extracted_streams.values():
                 try:
                     temp_path.unlink(missing_ok=True)
                 except Exception:
                     pass
+        if missing_during_translation:
+            return translated, True, False
         no_source_targets = had_pending_translation and not had_source_language
         return translated, translation_errors, no_source_targets
 
@@ -688,6 +719,7 @@ class MkvScanner:
         *,
         source_path: Path | None = None,
         mkv_mtime_ns: int | None = None,
+        cleanup_temp: bool = True,
     ) -> bool:
         extractor = self.tagger.extractor
         subtitle_blob = self._subtitle_path(path, target_lang)
@@ -696,11 +728,11 @@ class MkvScanner:
         if not path.exists():
             raise FileNotFoundError(path)
         temp_path = source_path
-        cleanup_temp = False
+        should_cleanup = cleanup_temp
         if temp_path is None:
             temp_path = extractor.create_temp_path(".srt")
             extractor.extract_stream(path, stream, temp_path)
-            cleanup_temp = True
+            should_cleanup = True
         try:
             translated = self.translator.translate(
                 temp_path, target_lang, src_lang=source_lang
@@ -743,7 +775,7 @@ class MkvScanner:
             )
             return True
         finally:
-            if cleanup_temp:
+            if should_cleanup and temp_path is not None:
                 try:
                     temp_path.unlink(missing_ok=True)
                 except Exception:  # pragma: no cover - cleanup best effort
@@ -831,3 +863,10 @@ class MkvScanner:
                     path.name,
                     lang,
                 )
+
+    def shutdown_translation_workers(self) -> ThreadPoolExecutor | None:
+        executor = getattr(self, "_translation_executor", None)
+        if executor:
+            executor.shutdown(wait=True)
+            self._translation_executor = None
+        return executor

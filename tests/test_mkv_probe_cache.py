@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from babelarr.mkv import SubtitleStream
+from babelarr.mkv import MkvSubtitleExtractor, SubtitleStream
 from babelarr.mkv_probe_cache import MkvProbeCache
 from babelarr.profiling import WorkloadProfiler
 
 
-class _StubExtractor:
+class _StubExtractor(MkvSubtitleExtractor):
     def __init__(self, streams: list[SubtitleStream]) -> None:
         self.streams = streams
         self.calls = 0

@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +55,10 @@ class Translator(Protocol):
         """Return True if *target_lang* is supported by the service."""
         ...
 
+    def set_queue_executor(self, executor: ThreadPoolExecutor | None) -> None:
+        """Associate an executor with the translator when available."""
+        ...
+
 
 @dataclass(frozen=True)
 class DetectionResult:
@@ -80,7 +85,6 @@ class LibreTranslateClient:
         http_timeout: float = 180.0,
         translation_timeout: float = 3600.0,
         max_concurrent_requests: int | None = 10,
-        max_concurrent_detection_requests: int | None = None,
         profiler: WorkloadProfiler | None = None,
     ) -> None:
         normalized_src = src_lang.strip().lower()
@@ -107,14 +111,9 @@ class LibreTranslateClient:
             self._post_concurrency = threading.Semaphore(max_concurrent_requests)
         else:
             self._post_concurrency = None
-        if isinstance(max_concurrent_detection_requests, int) and (
-            max_concurrent_detection_requests > 0
-        ):
-            self._detection_concurrency = threading.Semaphore(
-                max_concurrent_detection_requests
-            )
-        else:
-            self._detection_concurrency = None
+
+        self._queue_executor: ThreadPoolExecutor | None = None
+        self._queue_executor_local = threading.local()
 
         self.profiler = profiler
         self._translation_profile_name = "translator.translate"
@@ -188,27 +187,15 @@ class LibreTranslateClient:
         )
 
     @contextmanager
-    def _acquire_slot(self, *, detection: bool = False) -> Iterator[None]:
-        semaphores: list[threading.Semaphore] = []
-        if detection:
-            if self._detection_concurrency is not None:
-                semaphores.append(self._detection_concurrency)
-            elif self._post_concurrency is not None:
-                semaphores.append(self._post_concurrency)
-        elif self._post_concurrency is not None:
-            semaphores.append(self._post_concurrency)
-        if not semaphores:
+    def _acquire_slot(self) -> Iterator[None]:
+        if self._post_concurrency is None:
             yield
             return
-        for semaphore in semaphores:
-            # Detection requests prefer their own limiter but fall back to the main
-            # translation semaphore so we never flood the API with background probes.
-            semaphore.acquire()
+        self._post_concurrency.acquire()
         try:
             yield
         finally:
-            for semaphore in reversed(semaphores):
-                semaphore.release()
+            self._post_concurrency.release()
 
     def _profile(self, name: str) -> AbstractContextManager[None]:
         if not self.profiler:
@@ -282,6 +269,37 @@ class LibreTranslateClient:
         self._handle_error_response(download, "LibreTranslate download")
         return download.content
 
+    def set_queue_executor(self, executor: ThreadPoolExecutor | None) -> None:
+        """Associate the LibreTranslate worker executor with this client."""
+
+        self._queue_executor = executor
+
+    def _executor_entry(
+        self,
+        func: Callable[..., TResponse],
+        *args: object,
+        **kwargs: object,
+    ) -> TResponse:
+        self._queue_executor_local.in_executor = True
+        try:
+            return func(*args, **kwargs)
+        finally:
+            self._queue_executor_local.in_executor = False
+
+    def _run_in_executor(
+        self,
+        func: Callable[..., TResponse],
+        *args: object,
+        **kwargs: object,
+    ) -> TResponse:
+        executor = self._queue_executor
+        if not executor or getattr(self._queue_executor_local, "in_executor", False):
+            return func(*args, **kwargs)
+        assert executor is not None
+        worker: Callable[..., TResponse] = self._executor_entry
+        future = executor.submit(worker, func, *args, **kwargs)
+        return future.result()
+
     def _request_translation(
         self, path: Path, src_lang: str, target_lang: str
     ) -> bytes:
@@ -321,12 +339,23 @@ class LibreTranslateClient:
         sample = (
             text.decode("utf-8", errors="ignore") if isinstance(text, bytes) else text
         )
-        sample = sample.strip()
+        sample = str(sample).strip()
         if not sample:
             logger.debug("detect_skip reason=empty_sample")
             return None
+        return self._run_in_executor(
+            self._detect_language_impl,
+            sample,
+            min_confidence=min_confidence,
+        )
 
-        with self._acquire_slot(detection=True):
+    def _detect_language_impl(
+        self,
+        sample: str,
+        *,
+        min_confidence: float,
+    ) -> DetectionResult | None:
+        with self._acquire_slot():
             with self._profile(self._detection_profile_name):
                 resp = self._call_api_until_success(
                     cast(

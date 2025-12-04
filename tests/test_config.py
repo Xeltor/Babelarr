@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from babelarr.concurrency import DEFAULT_CPU_CORES, derive_concurrency
 from babelarr.config import Config
 
 if TYPE_CHECKING:
@@ -26,13 +27,6 @@ def test_parse_ensure_languages_filters_and_normalizes(
 def test_parse_ensure_languages_empty_raises() -> None:
     with pytest.raises(ValueError):
         Config._parse_ensure_langs("", default=["en"])
-
-
-def test_parse_workers_caps_and_defaults(caplog: LogCaptureFixture) -> None:
-    with caplog.at_level(logging.WARNING, logger="babelarr"):
-        workers = Config._parse_workers("20")
-    assert workers == 10
-    assert "cap workers" in caplog.text
 
 
 def test_parse_int_and_float_defaults(caplog: LogCaptureFixture) -> None:
@@ -77,14 +71,22 @@ def test_from_env_defaults_to_builtin_list(
     assert cfg.ensure_langs == ["en", "nl", "bs"]
 
 
-def test_invalid_workers_falls_back_to_default(
+def test_cpu_cores_drives_workers(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("CPU_CORES", "12")
+    cfg = Config.from_env()
+    assert cfg.cpu_cores == 12
+    assert cfg.workers == 3
+
+
+def test_invalid_cpu_cores_defaults(
     monkeypatch: MonkeyPatch, caplog: LogCaptureFixture
 ) -> None:
-    monkeypatch.setenv("WORKERS", "nope")
+    monkeypatch.setenv("CPU_CORES", "invalid")
     with caplog.at_level(logging.WARNING, logger="babelarr"):
         cfg = Config.from_env()
-    assert cfg.workers == 1
-    assert "invalid WORKERS" in caplog.text
+    expected = derive_concurrency(DEFAULT_CPU_CORES).workers
+    assert cfg.cpu_cores == DEFAULT_CPU_CORES
+    assert cfg.workers == expected
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 import time
 from collections.abc import Iterable
@@ -9,7 +10,7 @@ from pathlib import Path
 import schedule
 
 from . import watch as watch_module
-from .config import Config
+from .config import DEFAULT_BABELARR_WEB_HOST, DEFAULT_BABELARR_WEB_PORT, Config
 from .ignore import is_path_ignored
 from .jellyfin_api import JellyfinClient
 from .mkv import MkvSubtitleTagger
@@ -20,10 +21,14 @@ from .mkv_workflow import MkvWorkflow
 from .profiling import WorkloadProfiler
 from .profiling_ui import ProfilingDashboard
 from .sidecar_cleanup import SidecarCleaner
-from .tdarr_webhook import TdarrWebhookServer
 from .translator import Translator
+from .web import BabelarrWebServer
 
 logger = logging.getLogger(__name__)
+
+
+_TEMP_DIR_CLEANUP_INTERVAL_MINUTES = 5
+_TEMP_DIR_CLEANUP_MAX_AGE_SECONDS = 15 * 60
 
 
 class Application:
@@ -51,7 +56,9 @@ class Application:
         self.sidecar_cleaner: SidecarCleaner | None = None
         self._sidecar_cleanup_thread: threading.Thread | None = None
         self._sidecar_cleanup_lock = threading.Lock()
-        self.webhook_server: TdarrWebhookServer | None = None
+        self._temp_cleanup_thread: threading.Thread | None = None
+        self._temp_cleanup_lock = threading.Lock()
+        self.web_server: BabelarrWebServer | None = None
 
     def request_mkv_scan(self) -> None:
         if self.workflow:
@@ -146,7 +153,9 @@ class Application:
                 jellyfin_client=self.jellyfin,
                 profiler=self.profiler,
                 work_index=self._work_index,
+                translation_workers=self.config.libretranslate_max_concurrent_requests,
             )
+            self.translator.set_queue_executor(self._mkv_scanner.translation_executor)
             self.workflow = MkvWorkflow(
                 scanner=self._mkv_scanner,
                 worker_count=self.config.workers,
@@ -175,17 +184,20 @@ class Application:
             else:
                 logger.info("skip_observer reason=disabled")
             self._schedule_sidecar_cleanup()
+        self._schedule_temp_dir_cleanup()
         logger.info("service_started")
-        if self.config.webhook_port > 0 and self.workflow:
-            self.webhook_server = TdarrWebhookServer(
-                self,
-                self.config.webhook_host,
-                self.config.webhook_port,
-                token=self.config.webhook_token,
-            )
-            self.webhook_server.start()
-        if self.profiling_dashboard:
-            self.profiling_dashboard.start()
+        profiling_active = bool(
+            self.profiling_dashboard and self.profiling_dashboard.profiler.enabled
+        )
+        port = DEFAULT_BABELARR_WEB_PORT
+        dashboard = self.profiling_dashboard if profiling_active else None
+        self.web_server = BabelarrWebServer(
+            self,
+            dashboard,
+            DEFAULT_BABELARR_WEB_HOST,
+            port,
+        )
+        self.web_server.start()
 
         try:
             while not self.shutdown_event.is_set():
@@ -197,7 +209,11 @@ class Application:
                 watcher_thread.join()
             if self.workflow:
                 self.workflow.stop()
+            if self._mkv_scanner:
+                self._mkv_scanner.shutdown_translation_workers()
+                self.translator.set_queue_executor(None)
             self._wait_for_sidecar_cleanup()
+            self._wait_for_temp_dir_cleanup()
             close = getattr(self.translator, "close", None)
             if callable(close):
                 close()
@@ -205,10 +221,8 @@ class Application:
                 lines = self.profiler.report_lines()
                 if lines:
                     logger.info("profiling_summary %s", " | ".join(lines))
-            if self.profiling_dashboard:
-                self.profiling_dashboard.stop()
-            if self.webhook_server:
-                self.webhook_server.stop()
+            if self.web_server:
+                self.web_server.stop()
             logger.info("shutdown_complete")
 
     def _schedule_sidecar_cleanup(self) -> None:
@@ -239,5 +253,62 @@ class Application:
 
     def _wait_for_sidecar_cleanup(self) -> None:
         thread = self._sidecar_cleanup_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=5)
+
+    def _schedule_temp_dir_cleanup(self) -> None:
+        self._start_temp_dir_cleanup()
+        schedule.every(_TEMP_DIR_CLEANUP_INTERVAL_MINUTES).minutes.do(
+            self._start_temp_dir_cleanup
+        )
+
+    def _start_temp_dir_cleanup(self) -> None:
+        with self._temp_cleanup_lock:
+            if self._temp_cleanup_thread and self._temp_cleanup_thread.is_alive():
+                logger.info("temp_cleanup_skip reason=in_progress")
+                return
+            self._temp_cleanup_thread = threading.Thread(
+                target=self._perform_temp_dir_cleanup,
+                name="temp-dir-cleanup",
+                daemon=True,
+            )
+            self._temp_cleanup_thread.start()
+
+    def _perform_temp_dir_cleanup(self) -> None:
+        temp_root = Path(self.config.mkv_temp_dir)
+        if not temp_root.is_dir():
+            return
+        now = time.time()
+        cutoff = now - _TEMP_DIR_CLEANUP_MAX_AGE_SECONDS
+        removed = 0
+        failure = False
+        for entry in temp_root.iterdir():
+            if not entry.name.startswith("babelarr-"):
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            if mtime >= cutoff:
+                continue
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "temp_cleanup_failed path=%s error=%s",
+                    entry,
+                    exc,
+                )
+                failure = True
+            else:
+                removed += 1
+        if removed > 0 or failure:
+            logger.info("temp_cleanup_complete path=%s removed=%d", temp_root, removed)
+
+    def _wait_for_temp_dir_cleanup(self) -> None:
+        thread = self._temp_cleanup_thread
         if thread and thread.is_alive():
             thread.join(timeout=5)

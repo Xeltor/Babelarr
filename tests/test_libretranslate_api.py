@@ -14,12 +14,14 @@ if TYPE_CHECKING:
     from pytest import MonkeyPatch
 
 
+@pytest.mark.integration
 def test_fetch_languages_live() -> None:
     api = LibreTranslateAPI(LIVE_LT_URL)
     languages = api.fetch_languages()
     assert languages, "Expected languages from live LibreTranslate"
 
 
+@pytest.mark.integration
 def test_translate_and_detect_live(tmp_path: Path) -> None:
     api = LibreTranslateAPI(LIVE_LT_URL)
     source = tmp_path / "live.srt"

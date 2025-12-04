@@ -127,6 +127,11 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("start log_level=%s log_file=%s", log_level, log_file)
 
     config = Config.from_env()
+    logger.info(
+        "concurrency_resolved cpu_cores=%s workers=%s",
+        config.cpu_cores,
+        config.workers,
+    )
     validate_environment(config)
     logger.info(
         "config_loaded api_url=%s ensure_langs=%s",
@@ -134,11 +139,7 @@ def main(argv: list[str] | None = None) -> None:
         config.ensure_langs,
     )
     profiler = WorkloadProfiler(enabled=config.profiling_enabled)
-    dashboard = ProfilingDashboard(
-        profiler,
-        host=config.profiling_ui_host,
-        port=config.profiling_ui_port,
-    )
+    dashboard = ProfilingDashboard(profiler)
     preferred_source = _preferred_source_language(config.ensure_langs)
     translator = LibreTranslateClient(
         config.api_url,
@@ -151,7 +152,6 @@ def main(argv: list[str] | None = None) -> None:
         http_timeout=config.http_timeout,
         translation_timeout=config.translation_timeout,
         max_concurrent_requests=config.libretranslate_max_concurrent_requests,
-        max_concurrent_detection_requests=config.libretranslate_max_concurrent_detection_requests,
         profiler=profiler,
     )
     validate_ensure_languages(config, translator)

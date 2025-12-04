@@ -87,16 +87,11 @@ def test_post_concurrency_limits_apply_when_detection_concurrency_disabled() -> 
         "http://only",
         "en",
         max_concurrent_requests=1,
-        max_concurrent_detection_requests=None,
     )
     post_lock = _DummyLock()
     client._post_concurrency = cast(threading.Semaphore, post_lock)
 
     with client._acquire_slot():
-        assert post_lock.acquired
-    assert not post_lock.acquired
-
-    with client._acquire_slot(detection=True):
         assert post_lock.acquired
     assert not post_lock.acquired
 
@@ -143,6 +138,7 @@ def test_detect_language_empty_sample_logs(
     client.api.close()
 
 
+@pytest.mark.integration
 def test_detect_language_live() -> None:
     client = LibreTranslateClient(LIVE_LT_URL, "en")
     detection = client.detect_language("hello world", min_confidence=0.1)
@@ -174,6 +170,7 @@ def test_request_translation_download_flow(
     client.api.close()
 
 
+@pytest.mark.integration
 def test_translate_live(tmp_path: Path) -> None:
     src = tmp_path / "sample.en.srt"
     src.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
@@ -383,7 +380,6 @@ def test_detect_language_uses_detection_concurrency(
         "http://example",
         "en",
         max_concurrent_requests=1,
-        max_concurrent_detection_requests=1,
     )
     detection_started = threading.Event()
 
@@ -403,7 +399,9 @@ def test_detect_language_uses_detection_concurrency(
             kwargs={"min_confidence": 0.0},
         )
         thread.start()
-        assert detection_started.wait(0.5)
+        assert not detection_started.wait(0.1)
+
+    assert detection_started.wait(0.5)
 
     thread.join()
     client.close()

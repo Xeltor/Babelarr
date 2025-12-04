@@ -1,48 +1,33 @@
-"""Minimal HTTP dashboard exposing profiler metrics."""
+"""Helpers for rendering the profiling dashboard."""
 
 from __future__ import annotations
 
-import json
 import logging
-import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .profiling import WorkloadProfiler
 
 logger = logging.getLogger(__name__)
 
 
-class ProfilingHandler(BaseHTTPRequestHandler):
-    """Simple HTTP handler that renders profiler metrics."""
+class ProfilingDashboard:
+    """Helper that keeps track of status providers and renders dashboard payloads."""
 
-    profiler: WorkloadProfiler | None = None
-    status_providers: list[tuple[str, Callable[[], dict[str, object]]]] | None = None
+    def __init__(self, profiler: WorkloadProfiler) -> None:
+        self.profiler = profiler
+        self._status_providers: list[tuple[str, Callable[[], dict[str, object]]]] = []
 
-    def log_message(self, format: str, *args) -> None:  # pragma: no cover - noise
-        return
+    def register_status_provider(
+        self, name: str, provider: Callable[[], dict[str, object]]
+    ) -> None:
+        self._status_providers.append((name, provider))
 
-    def do_GET(self) -> None:
-        status = self._collect_status()
-        if self.path in ("/", "/index.html"):
-            content = self._render_page(status)
-            self._write_response(200, content.encode("utf-8"), "text/html")
-            return
-        if self.path == "/metrics":
-            payload = {
-                "timings": self.profiler.metrics() if self.profiler else {},
-                "status": {name: data for name, data in status},
-            }
-            body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-            self._write_response(200, body, "application/json")
-            return
-        self.send_error(404, "Not Found")
-
-    def _collect_status(self) -> list[tuple[str, dict[str, object]]]:
+    def _collect_status(
+        self,
+    ) -> list[tuple[str, dict[str, object]]]:
         collected: list[tuple[str, dict[str, object]]] = []
-        providers = self.status_providers or []
-        for name, provider in providers:
+        for name, provider in self._status_providers:
             try:
                 data = provider() or {}
             except Exception as exc:  # pragma: no cover - defensive
@@ -53,8 +38,9 @@ class ProfilingHandler(BaseHTTPRequestHandler):
             collected.append((name, data))
         return collected
 
-    def _render_page(self, status: Iterable[tuple[str, dict[str, object]]]) -> str:
+    def render_page(self) -> str:
         metrics = self.profiler.metrics() if self.profiler else {}
+        status = self._collect_status()
         header = f"<p>Last updated {datetime.utcnow().isoformat()} UTC</p>"
         rows = []
         for name in sorted(metrics):
@@ -112,76 +98,9 @@ class ProfilingHandler(BaseHTTPRequestHandler):
             "</body></html>"
         )
 
-    def _write_response(self, status: int, body: bytes, content_type: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-class ProfilingDashboard:
-    """Threaded HTTP server for profiler metrics."""
-
-    def __init__(
-        self,
-        profiler: WorkloadProfiler,
-        host: str = "0.0.0.0",
-        port: int | None = None,
-    ) -> None:
-        self.profiler = profiler
-        self.host = host
-        self.port = port or 0
-        self._server: ThreadingHTTPServer | None = None
-        self._thread: threading.Thread | None = None
-        self._status_providers: list[tuple[str, Callable[[], dict[str, object]]]] = []
-
-    def register_status_provider(
-        self, name: str, provider: Callable[[], dict[str, object]]
-    ) -> None:
-        self._status_providers.append((name, provider))
-
-    def start(self) -> None:
-        if not self.profiler.enabled or not self.port:
-            return
-        handler = self._make_handler()
-        try:
-            server = ThreadingHTTPServer((self.host, self.port), handler)
-        except OSError as exc:
-            logger.warning(
-                "profiling_ui_listen_failed host=%s port=%s error=%s",
-                self.host,
-                self.port,
-                exc,
-            )
-            return
-        self._server = server
-        self._thread = threading.Thread(target=server.serve_forever, daemon=True)
-        self._thread.start()
-        logger.info(
-            "profiling_ui_started host=%s port=%s", self.host, server.server_port
-        )
-
-    def stop(self) -> None:
-        if not self._server:
-            return
-        self._server.shutdown()
-        self._server.server_close()
-        if self._thread:
-            self._thread.join(timeout=3)
-        logger.info(
-            "profiling_ui_stopped host=%s port=%s", self.host, self._server.server_port
-        )
-        self._server = None
-        self._thread = None
-
-    def _make_handler(self) -> type[BaseHTTPRequestHandler]:
-        handler = type(
-            "ProfilingRequestHandler",
-            (ProfilingHandler,),
-            {
-                "profiler": self.profiler,
-                "status_providers": list(self._status_providers),
-            },
-        )
-        return handler
+    def metrics_payload(self) -> dict[str, object]:
+        status = self._collect_status()
+        return {
+            "timings": self.profiler.metrics() if self.profiler else {},
+            "status": {name: data for name, data in status},
+        }

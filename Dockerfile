@@ -16,6 +16,7 @@ COPY babelarr ./babelarr
 RUN pip install --no-cache-dir .
 
 COPY . .
+RUN chmod +x docker-entrypoint.sh
 # Create mount points for subtitles and the persistent queue database
 RUN mkdir -p /data /config && chown -R app:app /data /config /app
 
@@ -24,4 +25,4 @@ USER app:app
 # Example environment variables:
 #   -e WATCH_DIRS="/subs:/incoming"
 #   -e ENSURE_LANGS="en,nl,bs"
-ENTRYPOINT ["babelarr"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

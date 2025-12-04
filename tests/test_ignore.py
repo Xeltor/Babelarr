@@ -25,13 +25,12 @@ def test_is_path_ignored_stops_at_root(tmp_path: Path) -> None:
 
 def test_resolve_root_handles_errors() -> None:
     class FailingPath(Path):
-        _flavour = Path(".")._flavour
-
         def resolve(self) -> Path:  # type: ignore[override]
             raise OSError("fail")
 
     broken = FailingPath("missing")
 
     assert _resolve_root(None) is None
-    assert _resolve_root(Path("relative")).is_absolute()
+    resolved = _resolve_root(Path("relative"))
+    assert resolved is not None and resolved.is_absolute()
     assert _resolve_root(broken) is broken

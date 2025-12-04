@@ -5,7 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .concurrency import DEFAULT_CPU_CORES, derive_concurrency, parse_cpu_cores
+
 logger = logging.getLogger(__name__)
+
+DEFAULT_MKV_CACHE_PATH = "/config/cache.db"
+DEFAULT_MKV_TEMP_DIR = "/tmp/libretranslate-files-translate"
+DEFAULT_MKV_SCAN_INTERVAL_MINUTES = 180
+DEFAULT_MKV_MIN_CONFIDENCE = 0.85
+DEFAULT_MKV_CACHE_ENABLED = True
+DEFAULT_BABELARR_WEB_PORT = 4242
+DEFAULT_BABELARR_WEB_HOST = "0.0.0.0"
 
 
 @dataclass
@@ -36,6 +46,7 @@ class Config:
     api_url: str
     workers: int
     ensure_langs: list[str]
+    cpu_cores: int = DEFAULT_CPU_CORES
     api_key: str | None = None
     jellyfin_url: str | None = None
     jellyfin_token: str | None = None
@@ -48,21 +59,15 @@ class Config:
     http_timeout: float = 180.0
     translation_timeout: float = 3600.0
     libretranslate_max_concurrent_requests: int = 10
-    libretranslate_max_concurrent_detection_requests: int | None = 2
     persistent_sessions: bool = False
-    mkv_scan_interval_minutes: int = 180
-    mkv_min_confidence: float = 0.85
-    mkv_cache_path: str = "/config/cache.db"
+    mkv_scan_interval_minutes: int = DEFAULT_MKV_SCAN_INTERVAL_MINUTES
+    mkv_min_confidence: float = DEFAULT_MKV_MIN_CONFIDENCE
+    mkv_cache_path: str = DEFAULT_MKV_CACHE_PATH
     mkv_dirs: list[str] | None = None
-    mkv_cache_enabled: bool = True
-    mkv_temp_dir: str = "/tmp/libretranslate-files-translate"
+    mkv_cache_enabled: bool = DEFAULT_MKV_CACHE_ENABLED
+    mkv_temp_dir: str = DEFAULT_MKV_TEMP_DIR
     watch_enabled: bool = True
     profiling_enabled: bool = False
-    profiling_ui_host: str = "0.0.0.0"
-    profiling_ui_port: int = 0
-    webhook_host: str = "0.0.0.0"
-    webhook_port: int = 0
-    webhook_token: str | None = None
 
     @staticmethod
     def _parse_ensure_langs(raw: str | None, default: list[str]) -> list[str]:
@@ -95,26 +100,6 @@ class Config:
         return ensure_langs
 
     @staticmethod
-    def _parse_workers(raw: str | None) -> int:
-        MAX_WORKERS = 10
-        default_workers = 1
-        raw_workers = raw or str(default_workers)
-        try:
-            requested = int(raw_workers)
-        except ValueError:
-            logger.warning(
-                "use default %s for invalid WORKERS '%s'", default_workers, raw_workers
-            )
-            requested = default_workers
-        workers = min(requested, MAX_WORKERS)
-        if requested > MAX_WORKERS:
-            logger.warning(
-                "cap workers at %s to prevent instability (requested %s)",
-                MAX_WORKERS,
-                requested,
-            )
-        return workers
-
     @staticmethod
     def _parse_int(name: str, raw: str | None, default: int) -> int:
         raw_val = raw or str(default)
@@ -162,18 +147,23 @@ class Config:
 
     @staticmethod
     def _parse_detection_concurrency(
-        name: str, raw: str | None, default: int | None
+        name: str,
+        raw: str | None,
+        default: int | None,
     ) -> int | None:
         if raw is None:
-            return default
+            return None
+        raw_val = raw.strip()
+        if not raw_val:
+            return None
         try:
-            parsed = int(raw)
+            parsed = int(raw_val)
         except ValueError:
             logger.warning(
                 "use default %s for invalid %s '%s'",
                 default,
                 name,
-                raw,
+                raw_val,
             )
             return default
         if parsed <= 0:
@@ -188,9 +178,7 @@ class Config:
             default=["en", "nl", "bs"],
         )
 
-        default_mkv_cache = Path("/config/cache.db")
-        mkv_cache_raw = os.environ.get("MKV_CACHE_PATH")
-        mkv_cache_path = Path(mkv_cache_raw) if mkv_cache_raw else default_mkv_cache
+        mkv_cache_path = Path(DEFAULT_MKV_CACHE_PATH)
         try:
             mkv_cache_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -204,9 +192,7 @@ class Config:
         )
         mkv_dirs = [p for p in mkv_dirs_raw.split(":") if p]
         root_dirs = list(mkv_dirs)
-        mkv_temp_dir = os.environ.get(
-            "MKV_TEMP_DIR", "/tmp/libretranslate-files-translate"
-        )
+        mkv_temp_dir = DEFAULT_MKV_TEMP_DIR
         try:
             Path(mkv_temp_dir).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -219,44 +205,23 @@ class Config:
         api_key = os.environ.get("LIBRETRANSLATE_API_KEY") or None
         jellyfin_url = os.environ.get("JELLYFIN_URL") or None
         jellyfin_token = os.environ.get("JELLYFIN_TOKEN") or None
+        concurrency = derive_concurrency(parse_cpu_cores(os.environ.get("CPU_CORES")))
+        workers = concurrency.workers
+        cpu_cores = concurrency.cpu_cores
 
         parsers: dict[str, Callable[[str | None], Any]] = {
-            "WORKERS": cls._parse_workers,
-            "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS": lambda v: cls._parse_int(
-                "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS", v, 10
-            ),
-            "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS": lambda v: cls._parse_detection_concurrency(
-                "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS",
-                v,
-                2,
-            ),
             "PERSISTENT_SESSIONS": lambda v: cls._parse_bool(
                 "PERSISTENT_SESSIONS", v, False
-            ),
-            "MKV_SCAN_INTERVAL_MINUTES": lambda v: cls._parse_int(
-                "MKV_SCAN_INTERVAL_MINUTES", v, 180
-            ),
-            "MKV_MIN_CONFIDENCE": lambda v: cls._parse_float(
-                "MKV_MIN_CONFIDENCE", v, 0.85
-            ),
-            "MKV_CACHE_ENABLED": lambda v: cls._parse_bool(
-                "MKV_CACHE_ENABLED", v, True
             ),
             "WATCH_ENABLED": lambda v: cls._parse_bool("WATCH_ENABLED", v, True),
             "PROFILING_ENABLED": lambda v: cls._parse_bool(
                 "PROFILING_ENABLED", v, False
             ),
-            "PROFILING_UI_HOST": lambda v: v or "0.0.0.0",
-            "PROFILING_UI_PORT": lambda v: cls._parse_int("PROFILING_UI_PORT", v, 0),
-            "WEBHOOK_HOST": lambda v: v or "0.0.0.0",
-            "WEBHOOK_PORT": lambda v: cls._parse_int("WEBHOOK_PORT", v, 0),
         }
 
         parsed = {
             name: parser(os.environ.get(name)) for name, parser in parsers.items()
         }
-
-        workers = parsed["WORKERS"]
         retry_count = cls.retry_count
         backoff_delay = cls.backoff_delay
         availability_check_interval = cls.availability_check_interval
@@ -265,24 +230,13 @@ class Config:
         scan_interval_minutes = cls.scan_interval_minutes
         http_timeout = cls.http_timeout
         translation_timeout = cls.translation_timeout
-        libretranslate_max_concurrent_requests = parsed[
-            "LIBRETRANSLATE_MAX_CONCURRENT_REQUESTS"
-        ]
-        libretranslate_max_concurrent_detection_requests = parsed[
-            "LIBRETRANSLATE_MAX_CONCURRENT_DETECTION_REQUESTS"
-        ]
+        libretranslate_max_concurrent_requests = workers
         persistent_sessions = parsed["PERSISTENT_SESSIONS"]
-        mkv_scan_interval_minutes = parsed["MKV_SCAN_INTERVAL_MINUTES"]
-        mkv_min_confidence = parsed["MKV_MIN_CONFIDENCE"]
-        mkv_cache_enabled = parsed["MKV_CACHE_ENABLED"]
+        mkv_scan_interval_minutes = DEFAULT_MKV_SCAN_INTERVAL_MINUTES
+        mkv_min_confidence = DEFAULT_MKV_MIN_CONFIDENCE
+        mkv_cache_enabled = DEFAULT_MKV_CACHE_ENABLED
         watch_enabled = parsed["WATCH_ENABLED"]
         profiling_enabled = parsed["PROFILING_ENABLED"]
-        profiling_ui_host = parsed["PROFILING_UI_HOST"]
-        profiling_ui_port = parsed["PROFILING_UI_PORT"]
-        webhook_host = parsed["WEBHOOK_HOST"]
-        webhook_port = parsed["WEBHOOK_PORT"]
-        webhook_token = os.environ.get("WEBHOOK_TOKEN") or None
-
         logger.info(
             "loaded config mkv_dirs=%s ensure_langs=%s api_url=%s "
             "workers=%s api_key_set=%s jellyfin_url=%s jellyfin_token_set=%s "
@@ -290,8 +244,8 @@ class Config:
             "stabilize_timeout=%s persistent_sessions=%s http_timeout=%s translation_timeout=%s "
             "libretranslate_max_concurrent_requests=%s mkv_scan_interval_minutes=%s "
             "mkv_min_confidence=%s mkv_cache_path=%s mkv_cache_enabled=%s "
-            "libretranslate_max_concurrent_detection_requests=%s mkv_temp_dir=%s profiling_enabled=%s "
-            "profiling_ui_host=%s profiling_ui_port=%s watch_enabled=%s webhook_host=%s webhook_port=%s webhook_token_set=%s",
+            "mkv_temp_dir=%s profiling_enabled=%s "
+            "watch_enabled=%s",
             mkv_dirs,
             ensure_langs,
             api_url,
@@ -313,20 +267,15 @@ class Config:
             mkv_min_confidence,
             str(mkv_cache_path),
             mkv_cache_enabled,
-            libretranslate_max_concurrent_detection_requests,
             mkv_temp_dir,
             profiling_enabled,
-            profiling_ui_host,
-            profiling_ui_port,
             watch_enabled,
-            webhook_host,
-            webhook_port,
-            bool(webhook_token),
         )
 
         return cls(
             root_dirs=root_dirs,
             ensure_langs=ensure_langs,
+            cpu_cores=cpu_cores,
             api_url=api_url,
             workers=workers,
             api_key=api_key,
@@ -341,7 +290,6 @@ class Config:
             http_timeout=http_timeout,
             translation_timeout=translation_timeout,
             libretranslate_max_concurrent_requests=libretranslate_max_concurrent_requests,
-            libretranslate_max_concurrent_detection_requests=libretranslate_max_concurrent_detection_requests,
             persistent_sessions=persistent_sessions,
             mkv_scan_interval_minutes=mkv_scan_interval_minutes,
             mkv_min_confidence=mkv_min_confidence,
@@ -351,9 +299,4 @@ class Config:
             mkv_temp_dir=mkv_temp_dir,
             watch_enabled=watch_enabled,
             profiling_enabled=profiling_enabled,
-            profiling_ui_host=profiling_ui_host,
-            profiling_ui_port=profiling_ui_port,
-            webhook_host=webhook_host,
-            webhook_port=webhook_port,
-            webhook_token=webhook_token,
         )
